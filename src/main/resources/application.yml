@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: finvibe-websocket-listener
+  config:
+    import: optional:file:.env[.properties]
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+server:
+  port: ${LISTENER_PORT:8090}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+
+jwt:
+  secret: ${JWT_SECRET:testsecret12312312313123123123testsecret12312312313123123123}
+  issuer: ${JWT_ISSUER:finvibe-user}
+
+listener:
+  websocket:
+    allowed-origins: ${WS_ALLOWED_ORIGINS:*}
+    auth-timeout-ms: ${WS_AUTH_TIMEOUT_MS:10000}
+    heartbeat-interval-ms: ${WS_HEARTBEAT_INTERVAL_MS:15000}
+    pong-timeout-ms: ${WS_PONG_TIMEOUT_MS:15000}
+    max-missed-pongs: ${WS_MAX_MISSED_PONGS:2}
+    renew-interval-ms: ${WS_RENEW_INTERVAL_MS:60000}
+  redis:
+    topic:
+      current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}
