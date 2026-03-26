@@ -162,7 +162,7 @@ jobs:
               listener_ids="$(docker compose -f "${COMPOSE_FILE}" ps -q listener)"
               running_listener_count=0
               if [ -n "${listener_ids}" ]; then
-                running_listener_count="$(printf "%s\n" "${listener_ids}" | sed '/^$/d' | wc -l | tr -d ' ')"
+                running_listener_count="$(printf "%s\n" "${listener_ids}" | awk "NF" | wc -l | tr -d " ")"
               fi
 
               if [ "${running_listener_count}" -lt "${LISTENER_REPLICAS}" ]; then
@@ -174,7 +174,7 @@ jobs:
               healthy_listener_count=0
               unhealthy_detected=0
               for listener_id in ${listener_ids}; do
-                health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${listener_id}")"
+                health_status="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" "${listener_id}")"
                 if [ "${health_status}" = "healthy" ]; then
                   healthy_listener_count=$((healthy_listener_count + 1))
                   continue
