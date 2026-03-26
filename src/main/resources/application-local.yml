@@ -1,0 +1,10 @@
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+logging:
+  level:
+    root: info
+    depth.finvibe.listener: debug

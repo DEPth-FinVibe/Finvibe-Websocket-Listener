@@ -1,0 +1,163 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ${{ vars.LISTENER_IMAGE_NAME || format('{0}/finvibe-websocket-listener', secrets.DOCKERHUB_USERNAME) }}
+  CONTAINER_NAME: ${{ vars.LISTENER_CONTAINER_NAME || 'finvibe-websocket-listener' }}
+  APP_PORT: ${{ vars.LISTENER_PORT || '8090' }}
+  LOG_DIR_HOST: ${{ vars.LISTENER_LOG_DIR_HOST || '/var/log/finvibe-websocket-listener' }}
+  PRIMARY_DOCKER_NETWORK: ${{ vars.PRIMARY_DOCKER_NETWORK || 'infra_bridge' }}
+  SECONDARY_DOCKER_NETWORK: ${{ vars.SECONDARY_DOCKER_NETWORK || 'monitoring_net' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.sha }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          APP_PORT: ${{ env.APP_PORT }}
+          LOG_DIR_HOST: ${{ env.LOG_DIR_HOST }}
+          PRIMARY_DOCKER_NETWORK: ${{ env.PRIMARY_DOCKER_NETWORK }}
+          SECONDARY_DOCKER_NETWORK: ${{ env.SECONDARY_DOCKER_NETWORK }}
+          IMAGE_TAG: ${{ github.sha }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+          WS_ALLOWED_ORIGINS: ${{ vars.WS_ALLOWED_ORIGINS || '*' }}
+          WS_AUTH_TIMEOUT_MS: ${{ vars.WS_AUTH_TIMEOUT_MS || '10000' }}
+          WS_HEARTBEAT_INTERVAL_MS: ${{ vars.WS_HEARTBEAT_INTERVAL_MS || '15000' }}
+          WS_PONG_TIMEOUT_MS: ${{ vars.WS_PONG_TIMEOUT_MS || '15000' }}
+          WS_MAX_MISSED_PONGS: ${{ vars.WS_MAX_MISSED_PONGS || '2' }}
+          WS_RENEW_INTERVAL_MS: ${{ vars.WS_RENEW_INTERVAL_MS || '60000' }}
+          WS_PRICE_TOPIC: ${{ vars.WS_PRICE_TOPIC || 'market:price-updated' }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,IMAGE_NAME,CONTAINER_NAME,APP_PORT,LOG_DIR_HOST,PRIMARY_DOCKER_NETWORK,SECONDARY_DOCKER_NETWORK,IMAGE_TAG,REDIS_HOST,REDIS_PORT,REDIS_PASSWORD,JWT_SECRET,JWT_ISSUER,WS_ALLOWED_ORIGINS,WS_AUTH_TIMEOUT_MS,WS_HEARTBEAT_INTERVAL_MS,WS_PONG_TIMEOUT_MS,WS_MAX_MISSED_PONGS,WS_RENEW_INTERVAL_MS,WS_PRICE_TOPIC
+          script_stop: true
+          script: |
+            set -eu
+
+            required_vars="REDIS_HOST REDIS_PORT JWT_SECRET JWT_ISSUER"
+            for var_name in ${required_vars}; do
+              eval "var_value=\${${var_name}:-}"
+              if [ -z "${var_value}" ]; then
+                echo "Required deployment variable is missing: ${var_name}"
+                exit 1
+              fi
+            done
+
+            IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
+
+            mkdir -p "${LOG_DIR_HOST}"
+
+            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            docker pull "${IMAGE_REF}"
+
+            docker network inspect "${PRIMARY_DOCKER_NETWORK}" >/dev/null 2>&1 || {
+              echo "Primary docker network not found: ${PRIMARY_DOCKER_NETWORK}"
+              exit 1
+            }
+
+            docker network inspect "${SECONDARY_DOCKER_NETWORK}" >/dev/null 2>&1 || {
+              echo "Secondary docker network not found: ${SECONDARY_DOCKER_NETWORK}"
+              exit 1
+            }
+
+            if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
+              docker rm -f "${CONTAINER_NAME}"
+            fi
+
+            docker run -d \
+              --name "${CONTAINER_NAME}" \
+              --restart unless-stopped \
+              --network "${PRIMARY_DOCKER_NETWORK}" \
+              -e SPRING_PROFILES_ACTIVE=prod \
+              -e LISTENER_PORT=8090 \
+              -e REDIS_HOST="${REDIS_HOST}" \
+              -e REDIS_PORT="${REDIS_PORT}" \
+              -e REDIS_PASSWORD="${REDIS_PASSWORD}" \
+              -e JWT_SECRET="${JWT_SECRET}" \
+              -e JWT_ISSUER="${JWT_ISSUER}" \
+              -e WS_ALLOWED_ORIGINS="${WS_ALLOWED_ORIGINS}" \
+              -e WS_AUTH_TIMEOUT_MS="${WS_AUTH_TIMEOUT_MS}" \
+              -e WS_HEARTBEAT_INTERVAL_MS="${WS_HEARTBEAT_INTERVAL_MS}" \
+              -e WS_PONG_TIMEOUT_MS="${WS_PONG_TIMEOUT_MS}" \
+              -e WS_MAX_MISSED_PONGS="${WS_MAX_MISSED_PONGS}" \
+              -e WS_RENEW_INTERVAL_MS="${WS_RENEW_INTERVAL_MS}" \
+              -e WS_PRICE_TOPIC="${WS_PRICE_TOPIC}" \
+              -v "${LOG_DIR_HOST}:/app/logs" \
+              -p "${APP_PORT}:8090" \
+              "${IMAGE_REF}"
+
+            if ! docker network connect "${SECONDARY_DOCKER_NETWORK}" "${CONTAINER_NAME}"; then
+              echo "Failed to connect container to secondary network"
+              docker logs "${CONTAINER_NAME}" || true
+              exit 1
+            fi
+
+            for i in $(seq 1 60); do
+              if ! docker ps --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
+                echo "Container exited before becoming healthy"
+                docker logs "${CONTAINER_NAME}" || true
+                exit 1
+              fi
+
+              if curl --silent --fail "http://localhost:${APP_PORT}/actuator/health" >/dev/null; then
+                echo "Deployment healthy"
+                exit 0
+              fi
+
+              echo "Waiting for health check (${i}/60)..."
+              sleep 5
+            done
+
+            echo "Health check failed. Container state:"
+            docker inspect "${CONTAINER_NAME}" --format '{{json .State}}' || true
+            echo "Container logs:"
+            docker logs "${CONTAINER_NAME}" || true
+            exit 1

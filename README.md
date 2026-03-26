@@ -20,3 +20,37 @@
 ```
 
 기본 포트는 `8090`이며, WebSocket 경로는 `/market/ws` 입니다.
+
+## GitHub Actions 배포 설정
+
+`CD` 워크플로우(`.github/workflows/cd.yml`)를 사용하려면 아래 값을 설정해야 합니다.
+
+### GitHub Secrets (필수)
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+- `SSH_HOST`
+- `SSH_USER`
+- `SSH_PORT`
+- `SSH_PRIVATE_KEY`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_PASSWORD` (비밀번호 미사용이면 빈 문자열 가능)
+- `JWT_SECRET`
+- `JWT_ISSUER`
+
+### GitHub Variables (선택)
+
+- `LISTENER_IMAGE_NAME` (기본: `<dockerhub-user>/finvibe-websocket-listener`)
+- `LISTENER_CONTAINER_NAME` (기본: `finvibe-websocket-listener`)
+- `LISTENER_PORT` (기본: `8090`)
+- `LISTENER_LOG_DIR_HOST` (기본: `/var/log/finvibe-websocket-listener`)
+- `PRIMARY_DOCKER_NETWORK` (기본: `infra_bridge`)
+- `SECONDARY_DOCKER_NETWORK` (기본: `monitoring_net`)
+- `WS_ALLOWED_ORIGINS` (기본: `*`)
+- `WS_AUTH_TIMEOUT_MS` (기본: `10000`)
+- `WS_HEARTBEAT_INTERVAL_MS` (기본: `15000`)
+- `WS_PONG_TIMEOUT_MS` (기본: `15000`)
+- `WS_MAX_MISSED_PONGS` (기본: `2`)
+- `WS_RENEW_INTERVAL_MS` (기본: `60000`)
+- `WS_PRICE_TOPIC` (기본: `market:price-updated`)
