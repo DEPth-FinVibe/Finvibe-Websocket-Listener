@@ -78,8 +78,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,IMAGE_NAME,CONTAINER_NAME,APP_PORT,LOG_DIR_HOST,PRIMARY_DOCKER_NETWORK,SECONDARY_DOCKER_NETWORK,IMAGE_TAG,REDIS_HOST,REDIS_PORT,REDIS_PASSWORD,JWT_SECRET,JWT_ISSUER,WS_ALLOWED_ORIGINS,WS_AUTH_TIMEOUT_MS,WS_HEARTBEAT_INTERVAL_MS,WS_PONG_TIMEOUT_MS,WS_MAX_MISSED_PONGS,WS_RENEW_INTERVAL_MS,WS_PRICE_TOPIC
-          script_stop: true
           script: |
+            bash -se <<'EOF'
             set -eu
 
             required_vars="REDIS_HOST REDIS_PORT JWT_SECRET JWT_ISSUER"
@@ -161,3 +161,4 @@ jobs:
             echo "Container logs:"
             docker logs "${CONTAINER_NAME}" || true
             exit 1
+            EOF
