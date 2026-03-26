@@ -48,6 +48,7 @@
 - `SECONDARY_DOCKER_NETWORK` (기본: `monitoring_net`)
 - `LISTENER_INTERNAL_LB_PORT` (기본: `18090`, Caddy가 붙는 내부 LB 포트)
 - `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Traefik-Listener 내부 라우팅 네트워크)
+- `TRAEFIK_DOCKER_API_VERSION` (기본: `1.44`, Docker daemon API 호환값)
 - `LISTENER_REPLICAS` (기본: `2`)
 - `LISTENER_JAVA_TOOL_OPTIONS` (기본: `-Xms512m -Xmx2g -XX:+UseG1GC`)
 - `LISTENER_MEMORY_LIMIT` (기본: `2560m`, JVM heap 외 native/metaspace 여유 포함)
