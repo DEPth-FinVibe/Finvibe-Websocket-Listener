@@ -59,9 +59,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: |
-            deploy/docker-compose.yml
-            deploy/nginx.conf
+          source: deploy/docker-compose.yml,deploy/nginx.conf
           target: ~/finvibe-websocket-listener
           strip_components: 1
 
