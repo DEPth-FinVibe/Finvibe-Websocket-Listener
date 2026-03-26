@@ -1,8 +1,15 @@
 /.gradle/
 /build/
+/bin/
 /.idea/
 *.iml
 out/
+
+### Eclipse / STS ###
+.classpath
+.project
+.factorypath
+.settings/
 
 ### Mac OS ###
 .DS_Store

@@ -42,11 +42,13 @@
 ### GitHub Variables (선택)
 
 - `LISTENER_IMAGE_NAME` (기본: `<dockerhub-user>/finvibe-websocket-listener`)
-- `LISTENER_CONTAINER_NAME` (기본: `finvibe-websocket-listener`)
-- `LISTENER_PORT` (기본: `8090`)
+- `LISTENER_CONTAINER_NAME` (기본: `finvibe-websocket-listener`, 기존 단일 컨테이너 정리용)
 - `LISTENER_LOG_DIR_HOST` (기본: `/var/log/finvibe-websocket-listener`)
 - `PRIMARY_DOCKER_NETWORK` (기본: `infra_bridge`)
 - `SECONDARY_DOCKER_NETWORK` (기본: `monitoring_net`)
+- `LISTENER_INTERNAL_LB_PORT` (기본: `18090`, Caddy가 붙는 내부 LB 포트)
+- `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Traefik-Listener 내부 라우팅 네트워크)
+- `LISTENER_REPLICAS` (기본: `2`)
 - `WS_ALLOWED_ORIGINS` (기본: `*`)
 - `WS_AUTH_TIMEOUT_MS` (기본: `10000`)
 - `WS_HEARTBEAT_INTERVAL_MS` (기본: `15000`)
@@ -54,3 +56,24 @@
 - `WS_MAX_MISSED_PONGS` (기본: `2`)
 - `WS_RENEW_INTERVAL_MS` (기본: `60000`)
 - `WS_PRICE_TOPIC` (기본: `market:price-updated`)
+
+## 배포 토폴로지 (Compose + Traefik)
+
+- 외부 진입점: Caddy (`80/443`)
+- 내부 LB: Traefik (`LISTENER_INTERNAL_LB_PORT`, 기본 `18090`)
+- 앱: Listener 인스턴스 N개 (`LISTENER_REPLICAS`)
+
+Traefik은 Compose 내부 `lb` 네트워크에만 붙고, Listener가 `lb` 네트워크로 Traefik과 통신합니다.
+`PRIMARY_DOCKER_NETWORK`/`SECONDARY_DOCKER_NETWORK`는 Listener가 외부 인프라(예: Redis, Prometheus)와 통신할 때 사용합니다.
+
+`/market/ws` 는 Caddy -> Traefik -> Listener(여러 인스턴스) 순서로 전달됩니다.
+
+예시 Caddy 설정:
+
+```caddy
+your-domain.example.com {
+    reverse_proxy /market/ws* 127.0.0.1:18090
+}
+```
+
+배포 워크플로우는 `deploy/docker-compose.yml` 을 서버로 복사한 뒤 `docker compose up -d --scale listener=N` 으로 적용합니다.

@@ -1,0 +1,66 @@
+services:
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - --entrypoints.ws.address=:18090
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --log.level=INFO
+    ports:
+      - "${INTERNAL_LB_PORT:-18090}:18090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - lb
+
+  listener:
+    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      LISTENER_PORT: 8090
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS}
+      WS_AUTH_TIMEOUT_MS: ${WS_AUTH_TIMEOUT_MS}
+      WS_HEARTBEAT_INTERVAL_MS: ${WS_HEARTBEAT_INTERVAL_MS}
+      WS_PONG_TIMEOUT_MS: ${WS_PONG_TIMEOUT_MS}
+      WS_MAX_MISSED_PONGS: ${WS_MAX_MISSED_PONGS}
+      WS_RENEW_INTERVAL_MS: ${WS_RENEW_INTERVAL_MS}
+      WS_PRICE_TOPIC: ${WS_PRICE_TOPIC}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${INTERNAL_LB_NETWORK:-finvibe_ws_lb}
+      traefik.http.routers.listener.entrypoints: ws
+      traefik.http.routers.listener.rule: PathPrefix(`/`)
+      traefik.http.services.listener.loadbalancer.server.port: "8090"
+      prometheus.scrape: "true"
+      prometheus.job: finvibe-websocket-listener
+      prometheus.port: "8090"
+      prometheus.path: /actuator/prometheus
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8090/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - ${LOG_DIR_HOST}:/app/logs
+    networks:
+      - lb
+      - primary
+      - secondary
+
+networks:
+  lb:
+    name: ${INTERNAL_LB_NETWORK:-finvibe_ws_lb}
+  primary:
+    external: true
+    name: ${PRIMARY_DOCKER_NETWORK}
+  secondary:
+    external: true
+    name: ${SECONDARY_DOCKER_NETWORK}
