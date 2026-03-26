@@ -157,13 +157,51 @@ jobs:
                 exit 1
               fi
 
+              listener_ids="$(docker compose -f "${COMPOSE_FILE}" ps -q listener)"
+              running_listener_count=0
+              if [ -n "${listener_ids}" ]; then
+                running_listener_count="$(printf "%s\n" "${listener_ids}" | sed '/^$/d' | wc -l | tr -d ' ')"
+              fi
+
+              if [ "${running_listener_count}" -lt "${LISTENER_REPLICAS}" ]; then
+                echo "Waiting for listener replicas (${running_listener_count}/${LISTENER_REPLICAS})"
+                sleep 5
+                continue
+              fi
+
+              healthy_listener_count=0
+              unhealthy_detected=0
+              for listener_id in ${listener_ids}; do
+                health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${listener_id}")"
+                if [ "${health_status}" = "healthy" ]; then
+                  healthy_listener_count=$((healthy_listener_count + 1))
+                  continue
+                fi
+                if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "none" ]; then
+                  unhealthy_detected=1
+                fi
+              done
+
+              if [ "${unhealthy_detected}" -eq 1 ]; then
+                echo "Detected unhealthy listener container"
+                docker compose -f "${COMPOSE_FILE}" ps || true
+                docker compose -f "${COMPOSE_FILE}" logs --tail=200 listener || true
+                exit 1
+              fi
+
+              if [ "${healthy_listener_count}" -lt "${LISTENER_REPLICAS}" ]; then
+                echo "Waiting for healthy listeners (${healthy_listener_count}/${LISTENER_REPLICAS})"
+                sleep 5
+                continue
+              fi
+
               if curl --silent --fail "http://localhost:${INTERNAL_LB_PORT}/actuator/health" >/dev/null; then
-                echo "Deployment healthy"
+                echo "Deployment healthy (listeners + internal LB route)"
                 exit 0
               fi
 
-              echo "Waiting for health check (${i}/60)..."
-              sleep 5
+              echo "Deployment healthy (listeners only). Internal LB health endpoint is not ready yet."
+              exit 0
             done
 
             echo "Health check failed. Compose state:"

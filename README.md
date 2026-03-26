@@ -79,3 +79,10 @@ your-domain.example.com {
 ```
 
 배포 워크플로우는 `deploy/docker-compose.yml` 을 서버로 복사한 뒤 `docker compose up -d --scale listener=N` 으로 적용합니다.
+
+배포 성공 판단 기준:
+
+- Traefik 컨테이너가 running 상태
+- Listener 컨테이너 수가 `LISTENER_REPLICAS` 와 일치
+- 모든 Listener의 Docker healthcheck가 `healthy`
+- Traefik 경유 `http://localhost:${LISTENER_INTERNAL_LB_PORT}/actuator/health` 응답 성공

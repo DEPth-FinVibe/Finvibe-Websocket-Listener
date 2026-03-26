@@ -37,9 +37,16 @@ services:
     labels:
       traefik.enable: "true"
       traefik.docker.network: ${INTERNAL_LB_NETWORK:-finvibe_ws_lb}
-      traefik.http.routers.listener.entrypoints: ws
-      traefik.http.routers.listener.rule: PathPrefix(`/`)
-      traefik.http.services.listener.loadbalancer.server.port: "8090"
+      traefik.http.routers.listener-ws.entrypoints: ws
+      traefik.http.routers.listener-ws.rule: PathPrefix(`/market/ws`)
+      traefik.http.routers.listener-ws.service: listener-svc
+      traefik.http.routers.listener-health.entrypoints: ws
+      traefik.http.routers.listener-health.rule: Path(`/actuator/health`)
+      traefik.http.routers.listener-health.service: listener-svc
+      traefik.http.services.listener-svc.loadbalancer.server.port: "8090"
+      traefik.http.services.listener.loadbalancer.healthcheck.path: /actuator/health
+      traefik.http.services.listener.loadbalancer.healthcheck.interval: 10s
+      traefik.http.services.listener.loadbalancer.healthcheck.timeout: 3s
       prometheus.scrape: "true"
       prometheus.job: finvibe-websocket-listener
       prometheus.port: "8090"
