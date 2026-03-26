@@ -3,7 +3,8 @@ services:
     image: traefik:v3.2
     restart: unless-stopped
     environment:
-      DOCKER_API_VERSION: ${TRAEFIK_DOCKER_API_VERSION:-1.44}
+      DOCKER_API_VERSION: "1.44"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
     command:
       - --entrypoints.ws.address=:18090
       - --providers.docker=true
