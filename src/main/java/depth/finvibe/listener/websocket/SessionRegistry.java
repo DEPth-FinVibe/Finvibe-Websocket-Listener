@@ -105,6 +105,22 @@ public class SessionRegistry {
 		return new ArrayList<>(sessions.values());
 	}
 
+	public int getActiveSessionCount() {
+		return sessions.size();
+	}
+
+	public int getSubscribedStockCount() {
+		return stockSubscribers.size();
+	}
+
+	public int getTotalSubscriptions() {
+		int total = 0;
+		for (ClientSession session : sessions.values()) {
+			total += session.getSubscribedStockIds().size();
+		}
+		return total;
+	}
+
 	public record RemovedSession(UUID userId, Set<Long> subscribedStockIds) {
 		static RemovedSession empty() {
 			return new RemovedSession(null, Set.of());

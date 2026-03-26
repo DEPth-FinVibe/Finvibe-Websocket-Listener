@@ -116,6 +116,10 @@ jobs:
               --name "${CONTAINER_NAME}" \
               --restart unless-stopped \
               --network "${PRIMARY_DOCKER_NETWORK}" \
+              --label prometheus.scrape=true \
+              --label prometheus.job=finvibe-websocket-listener \
+              --label prometheus.port=8090 \
+              --label prometheus.path=/actuator/prometheus \
               -e SPRING_PROFILES_ACTIVE=prod \
               -e LISTENER_PORT=8090 \
               -e REDIS_HOST="${REDIS_HOST}" \

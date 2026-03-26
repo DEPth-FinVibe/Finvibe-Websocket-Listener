@@ -1,5 +1,6 @@
 package depth.finvibe.listener.websocket;
 
+import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.redis.CurrentWatcherRedisRepository;
 import depth.finvibe.listener.security.JwtTokenVerifier;
 import lombok.RequiredArgsConstructor;
@@ -26,11 +27,13 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private final SessionRegistry sessionRegistry;
 	private final JwtTokenVerifier jwtTokenVerifier;
 	private final CurrentWatcherRedisRepository currentWatcherRedisRepository;
+	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
 		sessionRegistry.add(session, System.currentTimeMillis());
+		webSocketMetrics.connectionOpened();
 	}
 
 	@Override
@@ -39,33 +42,41 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		try {
 			payload = objectMapper.readTree(message.getPayload());
 		} catch (Exception ex) {
+			webSocketMetrics.invalidMessage("invalid_json");
 			sendError(session, "BAD_REQUEST", "Invalid JSON payload.");
 			return;
 		}
 
 		String type = payload.path("type").asText("");
-		switch (type) {
+			switch (type) {
 			case "auth" -> handleAuth(session, payload);
 			case "subscribe" -> handleSubscribe(session, payload);
 			case "unsubscribe" -> handleUnsubscribe(session, payload);
 			case "pong" -> handlePong(session);
-			default -> sendError(session, "BAD_REQUEST", "Unsupported message type.");
+			default -> {
+				webSocketMetrics.invalidMessage("unsupported_type");
+				sendError(session, "BAD_REQUEST", "Unsupported message type.");
+			}
 		}
 	}
 
 	@Override
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+		webSocketMetrics.connectionClosed("closed_" + closeCode(status));
 		removeAndPublishUnregister(session.getId());
 	}
 
 	@Override
 	public void handleTransportError(WebSocketSession session, Throwable exception) {
+		webSocketMetrics.connectionClosed("transport_error");
 		removeAndPublishUnregister(session.getId());
 	}
 
 	private void handleAuth(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
+		webSocketMetrics.authAttempt();
 		String token = payload.path("token").asText("");
 		if (token.isBlank()) {
+			webSocketMetrics.authFailure("token_missing");
 			sendErrorAndClose(webSocketSession, "UNAUTHORIZED", "Token is required.");
 			return;
 		}
@@ -74,14 +85,17 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		try {
 			userId = jwtTokenVerifier.verifyAndGetUserId(token);
 		} catch (Exception ex) {
+			webSocketMetrics.authFailure("invalid_token");
 			sendErrorAndClose(webSocketSession, "UNAUTHORIZED", "Invalid token.");
 			return;
 		}
 
 		if (!sessionRegistry.authenticate(webSocketSession.getId(), userId)) {
+			webSocketMetrics.authFailure("session_not_found");
 			sendErrorAndClose(webSocketSession, "UNAUTHORIZED", "Session not found.");
 			return;
 		}
+		webSocketMetrics.authSuccess();
 
 		ObjectNode authAck = objectMapper.createObjectNode();
 		authAck.put("type", "auth");
@@ -91,6 +105,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	}
 
 	private void handleSubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
+		webSocketMetrics.subscribeRequest();
 		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 		if (clientSession == null || !clientSession.isAuthenticated()) {
 			sendError(webSocketSession, "UNAUTHORIZED", "Auth is required before subscribe.");
@@ -103,6 +118,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			boolean added = sessionRegistry.subscribe(webSocketSession.getId(), stockId);
 			subscribed.add("quote:" + stockId);
 			if (added) {
+				webSocketMetrics.subscriptionAdded();
 				currentWatcherRedisRepository.save(clientSession.getUserId(), stockId);
 			}
 		}
@@ -118,6 +134,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	}
 
 	private void handleUnsubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
+		webSocketMetrics.unsubscribeRequest();
 		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 		if (clientSession == null || !clientSession.isAuthenticated()) {
 			sendError(webSocketSession, "UNAUTHORIZED", "Auth is required before unsubscribe.");
@@ -129,6 +146,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		for (Long stockId : parseTopics(payload.path("topics"), rejected)) {
 			boolean removed = sessionRegistry.unsubscribe(webSocketSession.getId(), stockId);
 			if (removed) {
+				webSocketMetrics.subscriptionsRemoved(1);
 				currentWatcherRedisRepository.remove(clientSession.getUserId(), stockId);
 			}
 			unsubscribed.add("quote:" + stockId);
@@ -147,6 +165,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private void handlePong(WebSocketSession webSocketSession) {
 		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 		if (clientSession != null) {
+			webSocketMetrics.pongReceived();
 			clientSession.markPongReceived(System.currentTimeMillis());
 		}
 	}
@@ -199,9 +218,17 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		if (removedSession.userId() == null || removedSession.subscribedStockIds().isEmpty()) {
 			return;
 		}
+		webSocketMetrics.subscriptionsRemoved(removedSession.subscribedStockIds().size());
 
 		for (Long stockId : removedSession.subscribedStockIds()) {
 			currentWatcherRedisRepository.remove(removedSession.userId(), stockId);
 		}
+	}
+
+	private String closeCode(CloseStatus status) {
+		if (status == null) {
+			return "unknown";
+		}
+		return String.valueOf(status.getCode());
 	}
 }

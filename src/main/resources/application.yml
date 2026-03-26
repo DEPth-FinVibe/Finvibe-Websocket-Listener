@@ -13,7 +13,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, prometheus
 
 jwt:
   secret: ${JWT_SECRET:testsecret12312312313123123123testsecret12312312313123123123}

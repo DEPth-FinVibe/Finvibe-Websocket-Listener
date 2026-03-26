@@ -1,6 +1,7 @@
 package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.config.WebSocketProperties;
+import depth.finvibe.listener.metrics.WebSocketMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,6 +19,7 @@ public class WebSocketSweepScheduler {
 
 	private final SessionRegistry sessionRegistry;
 	private final WebSocketProperties webSocketProperties;
+	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
 
 	@Scheduled(fixedDelayString = "${listener.websocket.heartbeat-interval-ms:15000}")
@@ -41,6 +43,7 @@ public class WebSocketSweepScheduler {
 			if (clientSession.isPingPending()) {
 				long pingElapsed = now - clientSession.getLastPingAtEpochMs();
 				if (pingElapsed > webSocketProperties.pongTimeoutMs()) {
+					webSocketMetrics.pingTimeout();
 					int missed = clientSession.incrementMissedPong();
 					if (missed >= webSocketProperties.maxMissedPongs()) {
 						safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE);
@@ -60,6 +63,7 @@ public class WebSocketSweepScheduler {
 
 		try {
 			webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(pingPayload)));
+			webSocketMetrics.pingSent();
 			clientSession.markPingSent(now);
 		} catch (Exception ex) {
 			safeClose(webSocketSession, CloseStatus.SERVER_ERROR);

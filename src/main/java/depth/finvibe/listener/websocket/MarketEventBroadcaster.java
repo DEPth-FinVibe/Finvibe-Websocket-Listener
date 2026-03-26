@@ -1,5 +1,6 @@
 package depth.finvibe.listener.websocket;
 
+import depth.finvibe.listener.metrics.WebSocketMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ public class MarketEventBroadcaster {
 
 	private final SessionRegistry sessionRegistry;
 	private final ObjectMapper objectMapper;
+	private final WebSocketMetrics webSocketMetrics;
 
 	public void broadcastCurrentPrice(JsonNode currentPriceEvent) {
 		Long stockId = longOrNull(currentPriceEvent.path("stockId"));
@@ -43,6 +45,7 @@ public class MarketEventBroadcaster {
 		}
 
 		TextMessage message = new TextMessage(serialized);
+		webSocketMetrics.eventBroadcasted();
 		for (ClientSession clientSession : sessionRegistry.getSubscribers(stockId)) {
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
@@ -50,7 +53,9 @@ public class MarketEventBroadcaster {
 			}
 			try {
 				webSocketSession.sendMessage(message);
+				webSocketMetrics.eventDelivered();
 			} catch (Exception ex) {
+				webSocketMetrics.eventDeliveryFailed();
 				log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId);
 			}
 		}

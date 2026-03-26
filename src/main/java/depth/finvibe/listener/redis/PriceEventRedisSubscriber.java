@@ -1,5 +1,6 @@
 package depth.finvibe.listener.redis;
 
+import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.websocket.MarketEventBroadcaster;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,14 +19,17 @@ public class PriceEventRedisSubscriber implements MessageListener {
 
 	private final ObjectMapper objectMapper;
 	private final MarketEventBroadcaster marketEventBroadcaster;
+	private final WebSocketMetrics webSocketMetrics;
 
 	@Override
 	public void onMessage(Message message, byte[] pattern) {
 		String payload = new String(message.getBody(), StandardCharsets.UTF_8);
 		try {
 			JsonNode event = objectMapper.readTree(payload);
+			webSocketMetrics.redisEventConsumed();
 			marketEventBroadcaster.broadcastCurrentPrice(event);
 		} catch (Exception ex) {
+			webSocketMetrics.redisEventFailed();
 			log.warn("Failed to consume current-price redis payload.", ex);
 		}
 	}
