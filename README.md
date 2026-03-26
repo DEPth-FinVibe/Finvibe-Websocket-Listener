@@ -49,6 +49,8 @@
 - `LISTENER_INTERNAL_LB_PORT` (기본: `18090`, Caddy가 붙는 내부 LB 포트)
 - `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Traefik-Listener 내부 라우팅 네트워크)
 - `LISTENER_REPLICAS` (기본: `2`)
+- `LISTENER_JAVA_TOOL_OPTIONS` (기본: `-Xms512m -Xmx2g -XX:+UseG1GC`)
+- `LISTENER_MEMORY_LIMIT` (기본: `2560m`, JVM heap 외 native/metaspace 여유 포함)
 - `WS_ALLOWED_ORIGINS` (기본: `*`)
 - `WS_AUTH_TIMEOUT_MS` (기본: `10000`)
 - `WS_HEARTBEAT_INTERVAL_MS` (기본: `15000`)

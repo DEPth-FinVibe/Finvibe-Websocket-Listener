@@ -17,9 +17,11 @@ services:
   listener:
     image: ${IMAGE_NAME}:${IMAGE_TAG}
     restart: unless-stopped
+    mem_limit: ${LISTENER_MEMORY_LIMIT:-2560m}
     environment:
       SPRING_PROFILES_ACTIVE: prod
       LISTENER_PORT: 8090
+      JAVA_TOOL_OPTIONS: "${LISTENER_JAVA_TOOL_OPTIONS:--Xms512m -Xmx2g -XX:+UseG1GC}"
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
