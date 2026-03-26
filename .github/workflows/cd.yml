@@ -147,8 +147,12 @@ jobs:
               docker rm -f "${LEGACY_CONTAINER_NAME}"
             fi
 
+            if docker ps -a --format "{{.Names}}" | grep -Eq "^finvibe-websocket-listener-traefik-1$"; then
+              docker rm -f "finvibe-websocket-listener-traefik-1"
+            fi
+
             docker compose -f "${COMPOSE_FILE}" pull
-            docker compose -f "${COMPOSE_FILE}" up -d --force-recreate nginx
+            docker compose -f "${COMPOSE_FILE}" up -d --force-recreate --remove-orphans nginx
             docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans --scale listener="${LISTENER_REPLICAS}"
 
             for i in $(seq 1 60); do
