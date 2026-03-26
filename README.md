@@ -47,8 +47,7 @@
 - `PRIMARY_DOCKER_NETWORK` (기본: `infra_bridge`)
 - `SECONDARY_DOCKER_NETWORK` (기본: `monitoring_net`)
 - `LISTENER_INTERNAL_LB_PORT` (기본: `18090`, Caddy가 붙는 내부 LB 포트)
-- `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Traefik-Listener 내부 라우팅 네트워크)
-- `TRAEFIK_DOCKER_API_VERSION` (기본: `1.44`, Docker daemon API 호환값)
+- `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Nginx-Listener 내부 라우팅 네트워크)
 - `LISTENER_REPLICAS` (기본: `2`)
 - `LISTENER_JAVA_TOOL_OPTIONS` (기본: `-Xms512m -Xmx2g -XX:+UseG1GC`)
 - `LISTENER_MEMORY_LIMIT` (기본: `2560m`, JVM heap 외 native/metaspace 여유 포함)
@@ -60,16 +59,16 @@
 - `WS_RENEW_INTERVAL_MS` (기본: `60000`)
 - `WS_PRICE_TOPIC` (기본: `market:price-updated`)
 
-## 배포 토폴로지 (Compose + Traefik)
+## 배포 토폴로지 (Compose + Nginx)
 
 - 외부 진입점: Caddy (`80/443`)
-- 내부 LB: Traefik (`LISTENER_INTERNAL_LB_PORT`, 기본 `18090`)
+- 내부 LB: Nginx (`LISTENER_INTERNAL_LB_PORT`, 기본 `18090`)
 - 앱: Listener 인스턴스 N개 (`LISTENER_REPLICAS`)
 
-Traefik은 Compose 내부 `lb` 네트워크에만 붙고, Listener가 `lb` 네트워크로 Traefik과 통신합니다.
+Nginx는 Compose 내부 `lb` 네트워크에만 붙고, Listener가 `lb` 네트워크로 Nginx와 통신합니다.
 `PRIMARY_DOCKER_NETWORK`/`SECONDARY_DOCKER_NETWORK`는 Listener가 외부 인프라(예: Redis, Prometheus)와 통신할 때 사용합니다.
 
-`/market/ws` 는 Caddy -> Traefik -> Listener(여러 인스턴스) 순서로 전달됩니다.
+`/market/ws` 는 Caddy -> Nginx -> Listener(여러 인스턴스) 순서로 전달됩니다.
 
 예시 Caddy 설정:
 
@@ -83,7 +82,7 @@ your-domain.example.com {
 
 배포 성공 판단 기준:
 
-- Traefik 컨테이너가 running 상태
+- Nginx 컨테이너가 running 상태
 - Listener 컨테이너 수가 `LISTENER_REPLICAS` 와 일치
 - 모든 Listener의 Docker healthcheck가 `healthy`
-- Traefik 경유 `http://localhost:${LISTENER_INTERNAL_LB_PORT}/actuator/health` 응답 성공
+- Nginx 경유 `http://localhost:${LISTENER_INTERNAL_LB_PORT}/actuator/health` 응답은 추가 검증(실패해도 Listener가 healthy면 배포는 성공 처리)
