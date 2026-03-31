@@ -1,11 +1,13 @@
 package depth.finvibe.listener.websocket;
 
+import lombok.Getter;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Getter
 public class ClientSession {
 
 	private final WebSocketSession webSocketSession;
@@ -24,20 +26,8 @@ public class ClientSession {
 		this.lastPongAtEpochMs = nowEpochMs;
 	}
 
-	public WebSocketSession getWebSocketSession() {
-		return webSocketSession;
-	}
-
 	public String getSessionId() {
 		return webSocketSession.getId();
-	}
-
-	public long getConnectedAtEpochMs() {
-		return connectedAtEpochMs;
-	}
-
-	public UUID getUserId() {
-		return userId;
 	}
 
 	public void authenticate(UUID userId) {
@@ -45,26 +35,10 @@ public class ClientSession {
 		this.authenticated = true;
 	}
 
-	public boolean isAuthenticated() {
-		return authenticated;
-	}
-
-	public long getLastPongAtEpochMs() {
-		return lastPongAtEpochMs;
-	}
-
 	public void markPongReceived(long nowEpochMs) {
 		this.lastPongAtEpochMs = nowEpochMs;
 		this.pingPending = false;
 		this.missedPongCount = 0;
-	}
-
-	public long getLastPingAtEpochMs() {
-		return lastPingAtEpochMs;
-	}
-
-	public boolean isPingPending() {
-		return pingPending;
 	}
 
 	public void markPingSent(long nowEpochMs) {
@@ -75,10 +49,6 @@ public class ClientSession {
 	public int incrementMissedPong() {
 		this.pingPending = false;
 		this.missedPongCount += 1;
-		return missedPongCount;
-	}
-
-	public int getMissedPongCount() {
 		return missedPongCount;
 	}
 
