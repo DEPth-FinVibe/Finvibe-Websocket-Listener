@@ -2,6 +2,10 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: ${NGINX_NOFILE_SOFT:-200000}
+        hard: ${NGINX_NOFILE_HARD:-200000}
     ports:
       - "${INTERNAL_LB_PORT:-18090}:18090"
     volumes:
@@ -12,6 +16,10 @@ services:
   listener:
     image: ${IMAGE_NAME}:${IMAGE_TAG}
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: ${LISTENER_NOFILE_SOFT:-200000}
+        hard: ${LISTENER_NOFILE_HARD:-200000}
     mem_limit: ${LISTENER_MEMORY_LIMIT:-2560m}
     environment:
       SPRING_PROFILES_ACTIVE: prod
