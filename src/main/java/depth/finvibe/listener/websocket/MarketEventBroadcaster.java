@@ -65,8 +65,8 @@ public class MarketEventBroadcaster {
 
 			boolean accepted = clientSession.enqueueSessionTask(() -> deliverEvent(webSocketSession, message, stockId));
 			if (!accepted) {
-				webSocketMetrics.sessionQueueOverflow("broadcast_event");
-				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"), "broadcast_queue_overflow");
+				webSocketMetrics.sessionQueueOverflow("broadcast_event_drop");
+				webSocketMetrics.eventDeliveryFailed("queue_overflow_drop");
 			}
 		}
 	}

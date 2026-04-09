@@ -38,14 +38,20 @@ public class WebSocketSweepScheduler {
 		long now = System.currentTimeMillis();
 
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
+			if (!clientSession.isAuthenticated()) {
+				if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
+					safeClose(
+							clientSession.getWebSocketSession(),
+							CloseStatus.POLICY_VIOLATION.withReason("auth_timeout"),
+							"sweep_auth_timeout"
+					);
+				}
+				continue;
+			}
+
 			boolean accepted = clientSession.enqueueSessionTask(() -> sweepSingleSession(clientSession, now));
 			if (!accepted) {
-				webSocketMetrics.sessionQueueOverflow("heartbeat_sweep");
-				safeClose(
-						clientSession.getWebSocketSession(),
-						CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"),
-						"sweep_queue_overflow"
-				);
+				webSocketMetrics.sessionQueueOverflow("heartbeat_sweep_drop");
 			}
 		}
 	}

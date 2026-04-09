@@ -25,9 +25,17 @@ public class WatchRenewScheduler {
 	@Scheduled(fixedDelayString = "${listener.websocket.renew-interval-ms:60000}")
 	public void renewSubscriptions() {
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
+			if (!clientSession.isAuthenticated() || clientSession.getUserId() == null) {
+				continue;
+			}
+
+			if (clientSession.getSubscribedStockIds().isEmpty()) {
+				continue;
+			}
+
 			boolean accepted = clientSession.enqueueSessionTask(() -> renewSingleSession(clientSession));
 			if (!accepted) {
-				webSocketMetrics.sessionQueueOverflow("watch_renew");
+				webSocketMetrics.sessionQueueOverflow("watch_renew_drop");
 			}
 		}
 	}

@@ -290,6 +290,18 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		});
 
 		if (!accepted) {
+			if ("inbound_auth".equals(stage)) {
+				try {
+					task.run();
+					return;
+				} catch (Exception ex) {
+					webSocketMetrics.sessionTaskFailure("inbound_auth_fallback");
+					log.debug("Auth fallback task failed. sessionId={}", session.getId(), ex);
+					safeClose(resolveManagedSession(session), CloseStatus.SERVER_ERROR.withReason("auth_fallback_failed"), "handler_auth_fallback_failed");
+					return;
+				}
+			}
+
 			webSocketMetrics.sessionQueueOverflow(stage);
 			safeClose(resolveManagedSession(session), CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"), "handler_queue_overflow");
 		}
