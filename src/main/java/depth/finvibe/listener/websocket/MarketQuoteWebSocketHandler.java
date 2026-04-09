@@ -56,19 +56,19 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			payload = objectMapper.readTree(message.getPayload());
 		} catch (Exception ex) {
 			webSocketMetrics.invalidMessage("invalid_json");
-			sendError(session, "BAD_REQUEST", "Invalid JSON payload.");
+			enqueueSessionTask(session, "inbound_invalid_json", () -> sendError(session, "BAD_REQUEST", "Invalid JSON payload."));
 			return;
 		}
 
 		String type = payload.path("type").asText("");
 			switch (type) {
-			case "auth" -> handleAuth(session, payload);
-			case "subscribe" -> handleSubscribe(session, payload);
-			case "unsubscribe" -> handleUnsubscribe(session, payload);
-			case "pong" -> handlePong(session);
+			case "auth" -> enqueueSessionTask(session, "inbound_auth", () -> handleAuth(session, payload));
+			case "subscribe" -> enqueueSessionTask(session, "inbound_subscribe", () -> handleSubscribe(session, payload));
+			case "unsubscribe" -> enqueueSessionTask(session, "inbound_unsubscribe", () -> handleUnsubscribe(session, payload));
+			case "pong" -> enqueueSessionTask(session, "inbound_pong", () -> handlePong(session));
 			default -> {
 				webSocketMetrics.invalidMessage("unsupported_type");
-				sendError(session, "BAD_REQUEST", "Unsupported message type.");
+				enqueueSessionTask(session, "inbound_unsupported_type", () -> sendError(session, "BAD_REQUEST", "Unsupported message type."));
 			}
 		}
 	}
@@ -83,6 +83,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	@Override
 	public void handleTransportError(WebSocketSession session, Throwable exception) {
 		webSocketMetrics.connectionClosed("transport_error");
+		webSocketMetrics.connectionClosedCode(1011, "transport_error");
 		removeAndPublishUnregister(session.getId());
 	}
 
@@ -224,7 +225,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 
 	private void sendErrorAndClose(WebSocketSession session, String code, String message) throws Exception {
 		sendError(session, code, message);
-		session.close(CloseStatus.POLICY_VIOLATION);
+		safeClose(resolveManagedSession(session), CloseStatus.POLICY_VIOLATION.withReason("auth_error"), "handler_auth_error");
 	}
 
 	private void removeAndPublishUnregister(String sessionId) {
@@ -275,5 +276,39 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			return fallbackSession;
 		}
 		return clientSession.getWebSocketSession();
+	}
+
+	private void enqueueSessionTask(WebSocketSession session, String stage, QueueTask task) {
+		boolean accepted = sessionRegistry.enqueueSessionTask(session.getId(), () -> {
+			try {
+				task.run();
+			} catch (Exception ex) {
+				webSocketMetrics.sessionTaskFailure(stage);
+				log.debug("Session task failed. stage={}, sessionId={}", stage, session.getId(), ex);
+				safeClose(resolveManagedSession(session), CloseStatus.SERVER_ERROR.withReason("session_task_failed"), "handler_task_failed");
+			}
+		});
+
+		if (!accepted) {
+			webSocketMetrics.sessionQueueOverflow(stage);
+			safeClose(resolveManagedSession(session), CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"), "handler_queue_overflow");
+		}
+	}
+
+	private void safeClose(WebSocketSession session, CloseStatus status, String source) {
+		try {
+			if (!session.isOpen()) {
+				return;
+			}
+			webSocketMetrics.closeInitiated(source, status.getCode());
+			session.close(status);
+		} catch (Exception ex) {
+			log.debug("Failed to close session. sessionId={}", session.getId(), ex);
+		}
+	}
+
+	@FunctionalInterface
+	private interface QueueTask {
+		void run() throws Exception;
 	}
 }

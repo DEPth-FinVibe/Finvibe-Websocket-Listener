@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 @Component
 public class SessionRegistry {
@@ -18,13 +19,20 @@ public class SessionRegistry {
 	private final Map<String, ClientSession> sessions = new ConcurrentHashMap<>();
 	private final Map<Long, Set<String>> stockSubscribers = new ConcurrentHashMap<>();
 	private final WebSocketProperties webSocketProperties;
+	private final ExecutorService virtualTaskExecutor;
 
-	public SessionRegistry(WebSocketProperties webSocketProperties) {
+	public SessionRegistry(WebSocketProperties webSocketProperties, ExecutorService listenerVirtualTaskExecutor) {
 		this.webSocketProperties = webSocketProperties;
+		this.virtualTaskExecutor = listenerVirtualTaskExecutor;
 	}
 
 	public ClientSession add(WebSocketSession webSocketSession, long nowEpochMs) {
-		ClientSession clientSession = new ClientSession(wrapForConcurrentSend(webSocketSession), nowEpochMs);
+		ClientSession clientSession = new ClientSession(
+				wrapForConcurrentSend(webSocketSession),
+				nowEpochMs,
+				virtualTaskExecutor,
+				webSocketProperties.sessionQueueCapacity()
+		);
 		sessions.put(webSocketSession.getId(), clientSession);
 		return clientSession;
 	}
@@ -34,6 +42,7 @@ public class SessionRegistry {
 		if (clientSession == null) {
 			return RemovedSession.empty();
 		}
+		clientSession.closeQueue();
 
 		for (Long stockId : clientSession.getSubscribedStockIds()) {
 			Set<String> subscribers = stockSubscribers.get(stockId);
@@ -110,6 +119,14 @@ public class SessionRegistry {
 
 	public List<ClientSession> getAllSessions() {
 		return new ArrayList<>(sessions.values());
+	}
+
+	public boolean enqueueSessionTask(String sessionId, Runnable task) {
+		ClientSession clientSession = sessions.get(sessionId);
+		if (clientSession == null) {
+			return false;
+		}
+		return clientSession.enqueueSessionTask(task);
 	}
 
 	public int getActiveSessionCount() {

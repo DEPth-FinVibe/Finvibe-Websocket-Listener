@@ -12,6 +12,7 @@ public record WebSocketProperties(
 		long renewIntervalMs,
 		int sendTimeLimitMs,
 		int sendBufferSizeBytes,
-		String sendOverflowStrategy
+		String sendOverflowStrategy,
+		int sessionQueueCapacity
 ) {
 }

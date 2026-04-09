@@ -62,18 +62,28 @@ public class MarketEventBroadcaster {
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
 				continue;
 			}
-			try {
-				webSocketSession.sendMessage(message);
-				webSocketMetrics.eventDelivered();
-			} catch (SessionLimitExceededException ex) {
-				webSocketMetrics.eventDeliveryFailed();
-				webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");
-				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("send_buffer_exceeded"), "broadcast_buffer_limit");
-			} catch (Exception ex) {
-				webSocketMetrics.eventDeliveryFailed();
-				webSocketMetrics.eventDeliveryFailed(classifyDeliveryFailure(ex, webSocketSession));
-				log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId, ex);
+
+			boolean accepted = clientSession.enqueueSessionTask(() -> deliverEvent(webSocketSession, message, stockId));
+			if (!accepted) {
+				webSocketMetrics.sessionQueueOverflow("broadcast_event");
+				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"), "broadcast_queue_overflow");
 			}
+		}
+	}
+
+	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId) {
+		try {
+			webSocketSession.sendMessage(message);
+			webSocketMetrics.eventDelivered();
+		} catch (SessionLimitExceededException ex) {
+			webSocketMetrics.eventDeliveryFailed();
+			webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");
+			safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("send_buffer_exceeded"), "broadcast_buffer_limit");
+		} catch (Exception ex) {
+			webSocketMetrics.eventDeliveryFailed();
+			webSocketMetrics.eventDeliveryFailed(classifyDeliveryFailure(ex, webSocketSession));
+			webSocketMetrics.sessionTaskFailure("broadcast_event");
+			log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId, ex);
 		}
 	}
 

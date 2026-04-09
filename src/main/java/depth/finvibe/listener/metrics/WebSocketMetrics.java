@@ -112,7 +112,7 @@ public class WebSocketMetrics {
 	}
 
 	public void eventDeliveryFailed(String reason) {
-		meterRegistry.counter("finvibe_ws_event_delivery_failures_total", "reason", reason).increment();
+		meterRegistry.counter("finvibe_ws_event_delivery_failures_by_reason_total", "reason", reason).increment();
 	}
 
 	public void closeInitiated(String source, int code) {
@@ -131,5 +131,13 @@ public class WebSocketMetrics {
 
 	public void watcherError(String operation) {
 		meterRegistry.counter("finvibe_ws_watcher_errors_total", "operation", operation).increment();
+	}
+
+	public void sessionQueueOverflow(String stage) {
+		meterRegistry.counter("finvibe_ws_session_queue_overflow_total", "stage", stage).increment();
+	}
+
+	public void sessionTaskFailure(String stage) {
+		meterRegistry.counter("finvibe_ws_session_task_failures_total", "stage", stage).increment();
 	}
 }

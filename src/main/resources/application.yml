@@ -30,6 +30,7 @@ listener:
     send-time-limit-ms: ${WS_SEND_TIME_LIMIT_MS:10000}
     send-buffer-size-bytes: ${WS_SEND_BUFFER_SIZE_BYTES:262144}
     send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:TERMINATE}
+    session-queue-capacity: ${WS_SESSION_QUEUE_CAPACITY:1024}
   redis:
     topic:
       current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}

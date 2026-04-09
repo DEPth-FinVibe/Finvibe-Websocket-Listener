@@ -38,37 +38,49 @@ public class WebSocketSweepScheduler {
 		long now = System.currentTimeMillis();
 
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
-			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
-			if (!webSocketSession.isOpen()) {
-				safeClose(webSocketSession, CloseStatus.NORMAL.withReason("session_not_open"), "sweep_not_open");
-				continue;
+			boolean accepted = clientSession.enqueueSessionTask(() -> sweepSingleSession(clientSession, now));
+			if (!accepted) {
+				webSocketMetrics.sessionQueueOverflow("heartbeat_sweep");
+				safeClose(
+						clientSession.getWebSocketSession(),
+						CloseStatus.SESSION_NOT_RELIABLE.withReason("session_queue_overflow"),
+						"sweep_queue_overflow"
+				);
 			}
-
-			if (!clientSession.isAuthenticated()) {
-				if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
-					safeClose(webSocketSession, CloseStatus.POLICY_VIOLATION.withReason("auth_timeout"), "sweep_auth_timeout");
-				}
-				continue;
-			}
-
-			if (clientSession.isPingPending()) {
-				long pingElapsed = now - clientSession.getLastPingAtEpochMs();
-				if (pingElapsed > webSocketProperties.pongTimeoutMs()) {
-					webSocketMetrics.pingTimeout();
-					int missed = clientSession.incrementMissedPong();
-					if (missed >= webSocketProperties.maxMissedPongs()) {
-						safeClose(
-								webSocketSession,
-								CloseStatus.SESSION_NOT_RELIABLE.withReason("pong_timeout"),
-								"sweep_pong_timeout"
-						);
-						continue;
-					}
-				}
-			}
-
-			sendPing(webSocketSession, clientSession, now);
 		}
+	}
+
+	private void sweepSingleSession(ClientSession clientSession, long now) {
+		WebSocketSession webSocketSession = clientSession.getWebSocketSession();
+		if (!webSocketSession.isOpen()) {
+			safeClose(webSocketSession, CloseStatus.NORMAL.withReason("session_not_open"), "sweep_not_open");
+			return;
+		}
+
+		if (!clientSession.isAuthenticated()) {
+			if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
+				safeClose(webSocketSession, CloseStatus.POLICY_VIOLATION.withReason("auth_timeout"), "sweep_auth_timeout");
+			}
+			return;
+		}
+
+		if (clientSession.isPingPending()) {
+			long pingElapsed = now - clientSession.getLastPingAtEpochMs();
+			if (pingElapsed > webSocketProperties.pongTimeoutMs()) {
+				webSocketMetrics.pingTimeout();
+				int missed = clientSession.incrementMissedPong();
+				if (missed >= webSocketProperties.maxMissedPongs()) {
+					safeClose(
+							webSocketSession,
+							CloseStatus.SESSION_NOT_RELIABLE.withReason("pong_timeout"),
+							"sweep_pong_timeout"
+					);
+					return;
+				}
+			}
+		}
+
+		sendPing(webSocketSession, clientSession, now);
 	}
 
 	private void sendPing(WebSocketSession webSocketSession, ClientSession clientSession, long now) {
