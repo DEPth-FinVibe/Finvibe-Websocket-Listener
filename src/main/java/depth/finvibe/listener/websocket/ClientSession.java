@@ -77,18 +77,18 @@ public class ClientSession {
 		this.authenticated = true;
 	}
 
-	public void markPongReceived(long nowEpochMs) {
+	public synchronized void markPongReceived(long nowEpochMs) {
 		this.lastPongAtEpochMs = nowEpochMs;
 		this.pingPending = false;
 		this.missedPongCount = 0;
 	}
 
-	public void markPingSent(long nowEpochMs) {
+	public synchronized void markPingSent(long nowEpochMs) {
 		this.lastPingAtEpochMs = nowEpochMs;
 		this.pingPending = true;
 	}
 
-	public int incrementMissedPong() {
+	public synchronized int incrementMissedPong() {
 		this.pingPending = false;
 		this.missedPongCount += 1;
 		return missedPongCount;

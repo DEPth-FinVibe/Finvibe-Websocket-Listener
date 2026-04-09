@@ -66,6 +66,10 @@ public class WebSocketSweepScheduler {
 
 		if (clientSession.isPingPending()) {
 			long pingElapsed = now - clientSession.getLastPingAtEpochMs();
+			if (pingElapsed <= webSocketProperties.pongTimeoutMs()) {
+				return;
+			}
+
 			if (pingElapsed > webSocketProperties.pongTimeoutMs()) {
 				webSocketMetrics.pingTimeout();
 				int missed = clientSession.incrementMissedPong();

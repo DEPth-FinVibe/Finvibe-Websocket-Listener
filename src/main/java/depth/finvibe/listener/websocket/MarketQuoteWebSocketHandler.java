@@ -65,7 +65,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			case "auth" -> enqueueSessionTask(session, "inbound_auth", () -> handleAuth(session, payload));
 			case "subscribe" -> enqueueSessionTask(session, "inbound_subscribe", () -> handleSubscribe(session, payload));
 			case "unsubscribe" -> enqueueSessionTask(session, "inbound_unsubscribe", () -> handleUnsubscribe(session, payload));
-			case "pong" -> enqueueSessionTask(session, "inbound_pong", () -> handlePong(session));
+			case "pong" -> handlePong(session);
 			default -> {
 				webSocketMetrics.invalidMessage("unsupported_type");
 				enqueueSessionTask(session, "inbound_unsupported_type", () -> sendError(session, "BAD_REQUEST", "Unsupported message type."));
