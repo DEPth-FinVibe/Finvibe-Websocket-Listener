@@ -34,6 +34,16 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_connections_closed_total", "reason", reason).increment();
 	}
 
+	public void connectionClosedCode(int code, String label) {
+		meterRegistry.counter(
+				"finvibe_ws_connections_closed_code_total",
+				"code",
+				String.valueOf(code),
+				"label",
+				label
+		).increment();
+	}
+
 	public void authAttempt() {
 		meterRegistry.counter("finvibe_ws_auth_attempts_total").increment();
 	}
@@ -99,6 +109,20 @@ public class WebSocketMetrics {
 
 	public void eventDeliveryFailed() {
 		meterRegistry.counter("finvibe_ws_event_delivery_failures_total").increment();
+	}
+
+	public void eventDeliveryFailed(String reason) {
+		meterRegistry.counter("finvibe_ws_event_delivery_failures_total", "reason", reason).increment();
+	}
+
+	public void closeInitiated(String source, int code) {
+		meterRegistry.counter(
+				"finvibe_ws_close_initiated_total",
+				"source",
+				source,
+				"code",
+				String.valueOf(code)
+		).increment();
 	}
 
 	public void watcherOp(String operation) {

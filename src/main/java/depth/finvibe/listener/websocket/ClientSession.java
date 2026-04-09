@@ -1,13 +1,11 @@
 package depth.finvibe.listener.websocket;
 
-import lombok.Getter;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Getter
 public class ClientSession {
 
 	private final WebSocketSession webSocketSession;
@@ -28,6 +26,38 @@ public class ClientSession {
 
 	public String getSessionId() {
 		return webSocketSession.getId();
+	}
+
+	public WebSocketSession getWebSocketSession() {
+		return webSocketSession;
+	}
+
+	public long getConnectedAtEpochMs() {
+		return connectedAtEpochMs;
+	}
+
+	public UUID getUserId() {
+		return userId;
+	}
+
+	public boolean isAuthenticated() {
+		return authenticated;
+	}
+
+	public long getLastPongAtEpochMs() {
+		return lastPongAtEpochMs;
+	}
+
+	public long getLastPingAtEpochMs() {
+		return lastPingAtEpochMs;
+	}
+
+	public boolean isPingPending() {
+		return pingPending;
+	}
+
+	public int getMissedPongCount() {
+		return missedPongCount;
 	}
 
 	public void authenticate(UUID userId) {

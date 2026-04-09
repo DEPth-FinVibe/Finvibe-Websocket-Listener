@@ -1,7 +1,9 @@
 package depth.finvibe.listener.websocket;
 
+import depth.finvibe.listener.config.WebSocketProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,9 +17,14 @@ public class SessionRegistry {
 
 	private final Map<String, ClientSession> sessions = new ConcurrentHashMap<>();
 	private final Map<Long, Set<String>> stockSubscribers = new ConcurrentHashMap<>();
+	private final WebSocketProperties webSocketProperties;
+
+	public SessionRegistry(WebSocketProperties webSocketProperties) {
+		this.webSocketProperties = webSocketProperties;
+	}
 
 	public ClientSession add(WebSocketSession webSocketSession, long nowEpochMs) {
-		ClientSession clientSession = new ClientSession(webSocketSession, nowEpochMs);
+		ClientSession clientSession = new ClientSession(wrapForConcurrentSend(webSocketSession), nowEpochMs);
 		sessions.put(webSocketSession.getId(), clientSession);
 		return clientSession;
 	}
@@ -119,6 +126,31 @@ public class SessionRegistry {
 			total += session.getSubscribedStockIds().size();
 		}
 		return total;
+	}
+
+	private WebSocketSession wrapForConcurrentSend(WebSocketSession webSocketSession) {
+		if (webSocketSession instanceof ConcurrentWebSocketSessionDecorator) {
+			return webSocketSession;
+		}
+
+		return new ConcurrentWebSocketSessionDecorator(
+				webSocketSession,
+				webSocketProperties.sendTimeLimitMs(),
+				webSocketProperties.sendBufferSizeBytes(),
+				resolveOverflowStrategy(webSocketProperties.sendOverflowStrategy())
+		);
+	}
+
+	private ConcurrentWebSocketSessionDecorator.OverflowStrategy resolveOverflowStrategy(String configuredValue) {
+		if (configuredValue == null || configuredValue.isBlank()) {
+			return ConcurrentWebSocketSessionDecorator.OverflowStrategy.TERMINATE;
+		}
+
+		try {
+			return ConcurrentWebSocketSessionDecorator.OverflowStrategy.valueOf(configuredValue.trim().toUpperCase());
+		} catch (IllegalArgumentException ex) {
+			return ConcurrentWebSocketSessionDecorator.OverflowStrategy.TERMINATE;
+		}
 	}
 
 	public record RemovedSession(UUID userId, Set<Long> subscribedStockIds) {

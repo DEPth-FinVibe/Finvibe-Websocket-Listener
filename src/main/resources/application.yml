@@ -27,6 +27,9 @@ listener:
     pong-timeout-ms: ${WS_PONG_TIMEOUT_MS:15000}
     max-missed-pongs: ${WS_MAX_MISSED_PONGS:2}
     renew-interval-ms: ${WS_RENEW_INTERVAL_MS:60000}
+    send-time-limit-ms: ${WS_SEND_TIME_LIMIT_MS:10000}
+    send-buffer-size-bytes: ${WS_SEND_BUFFER_SIZE_BYTES:262144}
+    send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:TERMINATE}
   redis:
     topic:
       current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}

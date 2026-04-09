@@ -2,8 +2,8 @@ package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.config.WebSocketProperties;
 import depth.finvibe.listener.metrics.WebSocketMetrics;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -12,15 +12,26 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class WebSocketSweepScheduler {
+	private static final Logger log = LoggerFactory.getLogger(WebSocketSweepScheduler.class);
 
 	private final SessionRegistry sessionRegistry;
 	private final WebSocketProperties webSocketProperties;
 	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
+
+	public WebSocketSweepScheduler(
+			SessionRegistry sessionRegistry,
+			WebSocketProperties webSocketProperties,
+			WebSocketMetrics webSocketMetrics,
+			ObjectMapper objectMapper
+	) {
+		this.sessionRegistry = sessionRegistry;
+		this.webSocketProperties = webSocketProperties;
+		this.webSocketMetrics = webSocketMetrics;
+		this.objectMapper = objectMapper;
+	}
 
 	@Scheduled(fixedDelayString = "${listener.websocket.heartbeat-interval-ms:15000}")
 	public void sweepConnections() {
@@ -29,13 +40,13 @@ public class WebSocketSweepScheduler {
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen()) {
-				safeClose(webSocketSession, CloseStatus.NORMAL);
+				safeClose(webSocketSession, CloseStatus.NORMAL.withReason("session_not_open"), "sweep_not_open");
 				continue;
 			}
 
 			if (!clientSession.isAuthenticated()) {
 				if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
-					safeClose(webSocketSession, CloseStatus.POLICY_VIOLATION);
+					safeClose(webSocketSession, CloseStatus.POLICY_VIOLATION.withReason("auth_timeout"), "sweep_auth_timeout");
 				}
 				continue;
 			}
@@ -46,7 +57,11 @@ public class WebSocketSweepScheduler {
 					webSocketMetrics.pingTimeout();
 					int missed = clientSession.incrementMissedPong();
 					if (missed >= webSocketProperties.maxMissedPongs()) {
-						safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE);
+						safeClose(
+								webSocketSession,
+								CloseStatus.SESSION_NOT_RELIABLE.withReason("pong_timeout"),
+								"sweep_pong_timeout"
+						);
 						continue;
 					}
 				}
@@ -66,12 +81,13 @@ public class WebSocketSweepScheduler {
 			webSocketMetrics.pingSent();
 			clientSession.markPingSent(now);
 		} catch (Exception ex) {
-			safeClose(webSocketSession, CloseStatus.SERVER_ERROR);
+			safeClose(webSocketSession, CloseStatus.SERVER_ERROR.withReason("ping_send_failed"), "sweep_ping_send_failed");
 		}
 	}
 
-	private void safeClose(WebSocketSession webSocketSession, CloseStatus status) {
+	private void safeClose(WebSocketSession webSocketSession, CloseStatus status, String source) {
 		try {
+			webSocketMetrics.closeInitiated(source, status.getCode());
 			webSocketSession.close(status);
 		} catch (Exception ex) {
 			log.debug("Failed to close websocket session. sessionId={}", webSocketSession.getId());

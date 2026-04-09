@@ -1,23 +1,34 @@
 package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.SessionLimitExceededException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class MarketEventBroadcaster {
+	private static final Logger log = LoggerFactory.getLogger(MarketEventBroadcaster.class);
 
 	private final SessionRegistry sessionRegistry;
 	private final ObjectMapper objectMapper;
 	private final WebSocketMetrics webSocketMetrics;
+
+	public MarketEventBroadcaster(
+			SessionRegistry sessionRegistry,
+			ObjectMapper objectMapper,
+			WebSocketMetrics webSocketMetrics
+	) {
+		this.sessionRegistry = sessionRegistry;
+		this.objectMapper = objectMapper;
+		this.webSocketMetrics = webSocketMetrics;
+	}
 
 	public void broadcastCurrentPrice(JsonNode currentPriceEvent) {
 		Long stockId = longOrNull(currentPriceEvent.path("stockId"));
@@ -54,10 +65,44 @@ public class MarketEventBroadcaster {
 			try {
 				webSocketSession.sendMessage(message);
 				webSocketMetrics.eventDelivered();
+			} catch (SessionLimitExceededException ex) {
+				webSocketMetrics.eventDeliveryFailed();
+				webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");
+				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("send_buffer_exceeded"), "broadcast_buffer_limit");
 			} catch (Exception ex) {
 				webSocketMetrics.eventDeliveryFailed();
-				log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId);
+				webSocketMetrics.eventDeliveryFailed(classifyDeliveryFailure(ex, webSocketSession));
+				log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId, ex);
 			}
+		}
+	}
+
+	private String classifyDeliveryFailure(Exception ex, WebSocketSession session) {
+		String message = ex.getMessage();
+		if (message != null && message.contains("TEXT_PARTIAL_WRITING")) {
+			return "concurrent_write";
+		}
+
+		if (!session.isOpen()) {
+			return "session_closed";
+		}
+
+		if (ex instanceof IllegalStateException) {
+			return "illegal_state";
+		}
+
+		return "send_exception";
+	}
+
+	private void safeClose(WebSocketSession session, CloseStatus closeStatus, String source) {
+		try {
+			if (!session.isOpen()) {
+				return;
+			}
+			webSocketMetrics.closeInitiated(source, closeStatus.getCode());
+			session.close(closeStatus);
+		} catch (Exception ex) {
+			log.debug("Failed to close websocket session after delivery failure. sessionId={}", session.getId(), ex);
 		}
 	}
 

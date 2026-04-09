@@ -3,13 +3,13 @@ package depth.finvibe.listener.websocket;
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.redis.CurrentWatcherRedisRepository;
 import depth.finvibe.listener.security.JwtTokenVerifier;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -19,16 +19,29 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
+	private static final Logger log = LoggerFactory.getLogger(MarketQuoteWebSocketHandler.class);
 
 	private final SessionRegistry sessionRegistry;
 	private final JwtTokenVerifier jwtTokenVerifier;
 	private final CurrentWatcherRedisRepository currentWatcherRedisRepository;
 	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
+
+	public MarketQuoteWebSocketHandler(
+			SessionRegistry sessionRegistry,
+			JwtTokenVerifier jwtTokenVerifier,
+			CurrentWatcherRedisRepository currentWatcherRedisRepository,
+			WebSocketMetrics webSocketMetrics,
+			ObjectMapper objectMapper
+	) {
+		this.sessionRegistry = sessionRegistry;
+		this.jwtTokenVerifier = jwtTokenVerifier;
+		this.currentWatcherRedisRepository = currentWatcherRedisRepository;
+		this.webSocketMetrics = webSocketMetrics;
+		this.objectMapper = objectMapper;
+	}
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) {
@@ -63,6 +76,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	@Override
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
 		webSocketMetrics.connectionClosed("closed_" + closeCode(status));
+		webSocketMetrics.connectionClosedCode(closeCodeInt(status), closeLabel(status));
 		removeAndPublishUnregister(session.getId());
 	}
 
@@ -101,7 +115,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		authAck.put("type", "auth");
 		authAck.put("ok", true);
 		authAck.put("ts", System.currentTimeMillis());
-		webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(authAck)));
+		sendJson(webSocketSession, authAck);
 	}
 
 	private void handleSubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
@@ -130,7 +144,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		subscribed.forEach(subscribedNode::add);
 		ArrayNode rejectedNode = subscribeAck.putArray("rejected");
 		rejected.forEach(rejectedNode::add);
-		webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(subscribeAck)));
+		sendJson(webSocketSession, subscribeAck);
 	}
 
 	private void handleUnsubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
@@ -159,7 +173,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		unsubscribed.forEach(unsubscribedNode::add);
 		ArrayNode rejectedNode = unsubscribeAck.putArray("rejected");
 		rejected.forEach(rejectedNode::add);
-		webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(unsubscribeAck)));
+		sendJson(webSocketSession, unsubscribeAck);
 	}
 
 	private void handlePong(WebSocketSession webSocketSession) {
@@ -205,7 +219,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		errorPayload.put("type", "error");
 		errorPayload.put("code", code);
 		errorPayload.put("message", message);
-		session.sendMessage(new TextMessage(objectMapper.writeValueAsString(errorPayload)));
+		sendJson(session, errorPayload);
 	}
 
 	private void sendErrorAndClose(WebSocketSession session, String code, String message) throws Exception {
@@ -227,8 +241,39 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 
 	private String closeCode(CloseStatus status) {
 		if (status == null) {
-			return "unknown";
+			return "-1";
 		}
 		return String.valueOf(status.getCode());
+	}
+
+	private int closeCodeInt(CloseStatus status) {
+		if (status == null) {
+			return -1;
+		}
+		return status.getCode();
+	}
+
+	private String closeLabel(CloseStatus status) {
+		int code = closeCodeInt(status);
+		return switch (code) {
+			case 1000 -> "normal";
+			case 1008 -> "policy_violation";
+			case 1011 -> "server_error";
+			case 4500 -> "session_not_reliable";
+			default -> "other";
+		};
+	}
+
+	private void sendJson(WebSocketSession inboundSession, JsonNode payload) throws Exception {
+		WebSocketSession managedSession = resolveManagedSession(inboundSession);
+		managedSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
+	}
+
+	private WebSocketSession resolveManagedSession(WebSocketSession fallbackSession) {
+		ClientSession clientSession = sessionRegistry.get(fallbackSession.getId());
+		if (clientSession == null) {
+			return fallbackSession;
+		}
+		return clientSession.getWebSocketSession();
 	}
 }

@@ -9,6 +9,9 @@ public record WebSocketProperties(
 		long heartbeatIntervalMs,
 		long pongTimeoutMs,
 		int maxMissedPongs,
-		long renewIntervalMs
+		long renewIntervalMs,
+		int sendTimeLimitMs,
+		int sendBufferSizeBytes,
+		String sendOverflowStrategy
 ) {
 }
