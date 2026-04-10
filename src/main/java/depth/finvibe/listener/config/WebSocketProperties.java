@@ -10,6 +10,8 @@ public record WebSocketProperties(
 		long pongTimeoutMs,
 		int maxMissedPongs,
 		long renewIntervalMs,
+		int fanoutChunkSize,
+		int fanoutChunkParallelism,
 		int sendTimeLimitMs,
 		int sendBufferSizeBytes,
 		String sendOverflowStrategy,

@@ -1,6 +1,8 @@
 package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
+import depth.finvibe.listener.config.WebSocketProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -12,6 +14,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+
 @Component
 public class MarketEventBroadcaster {
 	private static final Logger log = LoggerFactory.getLogger(MarketEventBroadcaster.class);
@@ -19,15 +26,21 @@ public class MarketEventBroadcaster {
 	private final SessionRegistry sessionRegistry;
 	private final ObjectMapper objectMapper;
 	private final WebSocketMetrics webSocketMetrics;
+	private final WebSocketProperties webSocketProperties;
+	private final Executor fanoutChunkExecutor;
 
 	public MarketEventBroadcaster(
 			SessionRegistry sessionRegistry,
 			ObjectMapper objectMapper,
-			WebSocketMetrics webSocketMetrics
+			WebSocketMetrics webSocketMetrics,
+			WebSocketProperties webSocketProperties,
+			@Qualifier("listenerFanoutChunkExecutor") Executor fanoutChunkExecutor
 	) {
 		this.sessionRegistry = sessionRegistry;
 		this.objectMapper = objectMapper;
 		this.webSocketMetrics = webSocketMetrics;
+		this.webSocketProperties = webSocketProperties;
+		this.fanoutChunkExecutor = fanoutChunkExecutor;
 	}
 
 	public void broadcastCurrentPrice(JsonNode currentPriceEvent) {
@@ -57,7 +70,35 @@ public class MarketEventBroadcaster {
 
 		TextMessage message = new TextMessage(serialized);
 		webSocketMetrics.eventBroadcasted();
-		for (ClientSession clientSession : sessionRegistry.getSubscribers(stockId)) {
+		var subscribers = sessionRegistry.getSubscribers(stockId);
+		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
+		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
+		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
+			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId);
+			return;
+		}
+
+		List<CompletableFuture<Void>> futures = new ArrayList<>();
+		for (int start = 0; start < subscribers.size(); start += chunkSize) {
+			int end = Math.min(start + chunkSize, subscribers.size());
+			int chunkStart = start;
+			int chunkEnd = end;
+			futures.add(CompletableFuture.runAsync(
+					() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId),
+					fanoutChunkExecutor
+			));
+		}
+
+		try {
+			CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+		} catch (Exception ex) {
+			log.warn("Chunk fanout enqueue failed for stockId={}", stockId, ex);
+		}
+	}
+
+	private void enqueueChunk(List<ClientSession> subscribers, int start, int end, TextMessage message, long stockId) {
+		for (int index = start; index < end; index++) {
+			ClientSession clientSession = subscribers.get(index);
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
 				continue;
