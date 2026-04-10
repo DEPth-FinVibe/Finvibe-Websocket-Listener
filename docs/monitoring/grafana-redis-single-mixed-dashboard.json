@@ -1,0 +1,255 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "row", "name": "Row", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "요약",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "활성 연결 수",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum(finvibe_ws_active_connections{job=~\"$job\",instance=~\"$instance\"})" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "총 구독 수",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum(finvibe_ws_total_subscriptions{job=~\"$job\",instance=~\"$instance\"})" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Redis 이벤트 소비율 (1m)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(finvibe_ws_redis_events_consumed_total{job=~\"$job\",instance=~\"$instance\"}[1m]))" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" }
+    },
+    {
+      "type": "stat",
+      "title": "Redis 메모리 사용량",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "max(redis_memory_used_bytes{job=~\"$redis_job\",instance=~\"$redis_instance\"})" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none" }
+    },
+
+    {
+      "type": "row",
+      "title": "Listener fanout / session health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "인스턴스별 활성 연결 수",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum by (instance) (finvibe_ws_active_connections{job=~\"$job\",instance=~\"$instance\"})", "legendFormat": "{{instance}}" }],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis 이벤트 소비 vs 브로드캐스트",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finvibe_ws_redis_events_consumed_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "redis consumed/s" },
+        { "refId": "B", "expr": "sum(rate(finvibe_ws_events_broadcast_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "broadcast/s" },
+        { "refId": "C", "expr": "sum(rate(finvibe_ws_event_deliveries_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "deliveries/s" }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "세션 queue overflow / task failure",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (stage) (rate(finvibe_ws_session_queue_overflow_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "overflow {{stage}}" },
+        { "refId": "B", "expr": "sum by (stage) (rate(finvibe_ws_session_task_failures_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "task failure {{stage}}" }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "이벤트 전송 실패 원인",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum by (reason) (rate(finvibe_ws_event_delivery_failures_by_reason_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{reason}}" }],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Watcher 작업량(save/renew/remove)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [{ "refId": "A", "expr": "sum by (operation) (rate(finvibe_ws_watcher_ops_total{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{operation}}" }],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+
+    {
+      "type": "row",
+      "title": "Redis single node health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis commands/s",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "rate(redis_commands_total{job=~\"$redis_job\",instance=~\"$redis_instance\",cmd=\"publish\"}[$__rate_interval])", "legendFormat": "publish" },
+        { "refId": "B", "expr": "rate(redis_commands_total{job=~\"$redis_job\",instance=~\"$redis_instance\",cmd=\"sadd\"}[$__rate_interval])", "legendFormat": "sadd" },
+        { "refId": "C", "expr": "rate(redis_commands_total{job=~\"$redis_job\",instance=~\"$redis_instance\",cmd=\"srem\"}[$__rate_interval])", "legendFormat": "srem" },
+        { "refId": "D", "expr": "rate(redis_commands_total{job=~\"$redis_job\",instance=~\"$redis_instance\",cmd=\"expire\"}[$__rate_interval])", "legendFormat": "expire" },
+        { "refId": "E", "expr": "rate(redis_commands_total{job=~\"$redis_job\",instance=~\"$redis_instance\",cmd=\"del\"}[$__rate_interval])", "legendFormat": "del" }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis memory / fragmentation",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "redis_memory_used_bytes{job=~\"$redis_job\",instance=~\"$redis_instance\"}", "legendFormat": "used bytes" },
+        { "refId": "B", "expr": "redis_mem_fragmentation_ratio{job=~\"$redis_job\",instance=~\"$redis_instance\"}", "legendFormat": "fragmentation" }
+      ],
+      "fieldConfig": { "overrides": [{ "matcher": { "id": "byName", "options": "used bytes" }, "properties": [{ "id": "unit", "value": "bytes" }] }] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis network in/out",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "rate(redis_net_input_bytes_total{job=~\"$redis_job\",instance=~\"$redis_instance\"}[$__rate_interval])", "legendFormat": "net in B/s" },
+        { "refId": "B", "expr": "rate(redis_net_output_bytes_total{job=~\"$redis_job\",instance=~\"$redis_instance\"}[$__rate_interval])", "legendFormat": "net out B/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis clients / ops processed",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 31 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "redis_connected_clients{job=~\"$redis_job\",instance=~\"$redis_instance\"}", "legendFormat": "connected clients" },
+        { "refId": "B", "expr": "rate(redis_commands_processed_total{job=~\"$redis_job\",instance=~\"$redis_instance\"}[$__rate_interval])", "legendFormat": "ops/s" }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["finvibe", "listener", "websocket", "redis", "hotkey"],
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "label": "Listener job",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "refresh": 2,
+        "definition": "label_values(finvibe_ws_active_connections, job)",
+        "query": { "query": "label_values(finvibe_ws_active_connections, job)", "refId": "jobVar" },
+        "multi": false,
+        "includeAll": false,
+        "current": { "selected": true, "text": "finvibe-websocket-listener", "value": "finvibe-websocket-listener" }
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "label": "Listener instance",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "refresh": 2,
+        "definition": "label_values(finvibe_ws_active_connections{job=~\"$job\"}, instance)",
+        "query": { "query": "label_values(finvibe_ws_active_connections{job=~\"$job\"}, instance)", "refId": "instanceVar" },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": ".*" }
+      },
+      {
+        "name": "redis_job",
+        "type": "query",
+        "label": "Redis job",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "refresh": 2,
+        "definition": "label_values(redis_connected_clients, job)",
+        "query": { "query": "label_values(redis_connected_clients, job)", "refId": "redisJobVar" },
+        "multi": false,
+        "includeAll": false,
+        "current": { "selected": true, "text": "redis", "value": "redis" }
+      },
+      {
+        "name": "redis_instance",
+        "type": "query",
+        "label": "Redis instance",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "refresh": 2,
+        "definition": "label_values(redis_connected_clients{job=~\"$redis_job\"}, instance)",
+        "query": { "query": "label_values(redis_connected_clients{job=~\"$redis_job\"}, instance)", "refId": "redisInstanceVar" },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": ".*" }
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Finvibe Redis Single-Node Mixed WebSocket Test",
+  "uid": "finvibe-redis-single-mixed",
+  "version": 1,
+  "weekStart": ""
+}
