@@ -1,6 +1,7 @@
 package depth.finvibe.listener.metrics;
 
 import depth.finvibe.listener.websocket.SessionRegistry;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -130,6 +131,14 @@ public class WebSocketMetrics {
 		recordLatency("finvibe_ws_event_source_to_delivery_latency", latencyMs);
 	}
 
+	public void outboundDataDeliveryLatency(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_data_delivery_latency", latencyMs);
+	}
+
+	public void outboundControlDeliveryLatency(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_control_delivery_latency", latencyMs);
+	}
+
 	public void eventDeliveryFailed() {
 		meterRegistry.counter("finvibe_ws_event_delivery_failures_total").increment();
 	}
@@ -162,6 +171,16 @@ public class WebSocketMetrics {
 
 	public void sessionTaskFailure(String stage) {
 		meterRegistry.counter("finvibe_ws_session_task_failures_total", "stage", stage).increment();
+	}
+
+	public void sessionQueueDepthOnEnqueue(int depth, String stage) {
+		DistributionSummary.builder("finvibe_ws_session_queue_depth_on_enqueue")
+				.description("Observed session queue depth at task enqueue time")
+				.baseUnit("tasks")
+				.tag("stage", stage)
+				.publishPercentileHistogram()
+				.register(meterRegistry)
+				.record(Math.max(0, depth));
 	}
 
 	private void recordLatency(String metricName, long latencyMs) {

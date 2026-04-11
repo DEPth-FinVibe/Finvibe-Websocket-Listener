@@ -129,7 +129,9 @@ public class MarketEventBroadcaster {
 			webSocketSession.sendMessage(message);
 			webSocketMetrics.eventDelivered();
 			if (sourceTs != null) {
-				webSocketMetrics.eventSourceToDeliveryLatency(System.currentTimeMillis() - sourceTs);
+				long latencyMs = System.currentTimeMillis() - sourceTs;
+				webSocketMetrics.eventSourceToDeliveryLatency(latencyMs);
+				webSocketMetrics.outboundDataDeliveryLatency(latencyMs);
 			}
 		} catch (SessionLimitExceededException ex) {
 			webSocketMetrics.eventDeliveryFailed();

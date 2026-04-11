@@ -124,6 +124,10 @@ public class ClientSession {
 		return sessionTaskQueue.size();
 	}
 
+	public long getConnectedDurationMs(long nowEpochMs) {
+		return Math.max(0, nowEpochMs - connectedAtEpochMs);
+	}
+
 	public void closeQueue() {
 		queueClosed = true;
 		sessionTaskQueue.clear();

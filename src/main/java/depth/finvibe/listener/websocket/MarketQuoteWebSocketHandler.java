@@ -267,7 +267,11 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 
 	private void sendJson(WebSocketSession inboundSession, JsonNode payload) throws Exception {
 		WebSocketSession managedSession = resolveManagedSession(inboundSession);
+		Long createdAt = longOrNull(payload.path("ts"));
 		managedSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
+		if (createdAt != null) {
+			webSocketMetrics.outboundControlDeliveryLatency(System.currentTimeMillis() - createdAt);
+		}
 	}
 
 	private WebSocketSession resolveManagedSession(WebSocketSession fallbackSession) {
@@ -279,6 +283,10 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	}
 
 	private void enqueueSessionTask(WebSocketSession session, String stage, QueueTask task) {
+		ClientSession clientSession = sessionRegistry.get(session.getId());
+		if (clientSession != null) {
+			webSocketMetrics.sessionQueueDepthOnEnqueue(clientSession.getQueuedTaskCount(), stage);
+		}
 		boolean accepted = sessionRegistry.enqueueSessionTask(session.getId(), () -> {
 			try {
 				task.run();
@@ -322,5 +330,12 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	@FunctionalInterface
 	private interface QueueTask {
 		void run() throws Exception;
+	}
+
+	private Long longOrNull(JsonNode node) {
+		if (node == null || node.isNull() || !node.isNumber()) {
+			return null;
+		}
+		return node.asLong();
 	}
 }
