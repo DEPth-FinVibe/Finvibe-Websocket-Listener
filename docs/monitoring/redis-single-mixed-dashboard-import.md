@@ -36,6 +36,10 @@
 - `finvibe_ws_watcher_ops_total`
 - `finvibe_ws_session_queue_overflow_total`
 - `finvibe_ws_session_task_failures_total`
+- `finvibe_ws_event_source_to_consume_latency_seconds_bucket`
+- `finvibe_ws_event_source_to_broadcast_latency_seconds_bucket`
+- `finvibe_ws_event_source_to_enqueue_latency_seconds_bucket`
+- `finvibe_ws_event_source_to_delivery_latency_seconds_bucket`
 
 ### Redis exporter 메트릭
 
@@ -80,6 +84,33 @@ listener fanout 경로가 먼저 막히는 신호다.
 
 - memory는 안정적이지만 latency가 튀면 CPU/command contention 가능성
 - fragmentation이 같이 오르면 TTL churn 영향 가능성
+
+### 6. Event-to-delivery latency
+
+새 메트릭은 source event timestamp(`ts`) 기준으로 listener 내부 구간 지연을 본다.
+
+- `source_to_consume`: Redis publish 이후 listener consume까지
+- `source_to_broadcast`: listener가 payload를 만들어 broadcast 시작할 때까지
+- `source_to_enqueue`: 세션 queue에 fanout task를 넣을 때까지
+- `source_to_delivery`: `sendMessage()` 완료 기준 listener delivery까지
+
+PromQL 예시:
+
+```promql
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.99, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
+
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket[5m])) by (le))
+```
+
+해석 포인트:
+
+- `source_to_consume`가 높으면 Redis ingress 또는 subscriber consume이 밀리는 것
+- `source_to_broadcast`가 높으면 listener 내부 이벤트 처리/직렬화가 밀리는 것
+- `source_to_enqueue`가 높으면 fanout scheduling이 밀리는 것
+- `source_to_delivery`만 높으면 최종 outbound/session write 경로가 병목일 가능성이 큼
 
 ## 권장 사용법
 
