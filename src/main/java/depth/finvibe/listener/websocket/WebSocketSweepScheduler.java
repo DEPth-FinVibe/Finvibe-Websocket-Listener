@@ -49,6 +49,11 @@ public class WebSocketSweepScheduler {
 				continue;
 			}
 
+			if (shouldSkipHeartbeat(clientSession, now)) {
+				webSocketMetrics.maintenanceSkipped("heartbeat", "backlog_or_recent_outbound");
+				continue;
+			}
+
 			boolean accepted = clientSession.enqueueSessionTask(() -> sweepSingleSession(clientSession, now));
 			if (!accepted) {
 				webSocketMetrics.sessionQueueOverflow("heartbeat_sweep_drop");
@@ -101,10 +106,19 @@ public class WebSocketSweepScheduler {
 		try {
 			webSocketSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(pingPayload)));
 			webSocketMetrics.pingSent();
+			clientSession.markOutboundSent(now);
 			clientSession.markPingSent(now);
 		} catch (Exception ex) {
 			safeClose(webSocketSession, CloseStatus.SERVER_ERROR.withReason("ping_send_failed"), "sweep_ping_send_failed");
 		}
+	}
+
+	private boolean shouldSkipHeartbeat(ClientSession clientSession, long now) {
+		if (clientSession.hasPendingDataTasks() || clientSession.getQueuedTaskCount() > 0) {
+			return true;
+		}
+		long recentOutboundElapsed = now - clientSession.getLastOutboundAtEpochMs();
+		return recentOutboundElapsed < Math.max(1000L, webSocketProperties.heartbeatIntervalMs() / 2);
 	}
 
 	private void safeClose(WebSocketSession webSocketSession, CloseStatus status, String source) {

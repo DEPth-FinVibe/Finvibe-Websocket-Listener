@@ -181,6 +181,10 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_session_task_failures_total", "stage", stage).increment();
 	}
 
+	public void maintenanceSkipped(String operation, String reason) {
+		meterRegistry.counter("finvibe_ws_maintenance_skipped_total", "operation", operation, "reason", reason).increment();
+	}
+
 	public void sessionQueueDepthOnEnqueue(int depth, String stage) {
 		DistributionSummary.builder("finvibe_ws_session_queue_depth_on_enqueue")
 				.description("Observed session queue depth at task enqueue time")

@@ -14,9 +14,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 @Component
@@ -86,22 +84,11 @@ public class MarketEventBroadcaster {
 			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs);
 			return;
 		}
-
-		List<CompletableFuture<Void>> futures = new ArrayList<>();
 		for (int start = 0; start < subscribers.size(); start += chunkSize) {
 			int end = Math.min(start + chunkSize, subscribers.size());
 			int chunkStart = start;
 			int chunkEnd = end;
-			futures.add(CompletableFuture.runAsync(
-					() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs),
-					fanoutChunkExecutor
-			));
-		}
-
-		try {
-			CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-		} catch (Exception ex) {
-			log.warn("Chunk fanout enqueue failed for stockId={}", stockId, ex);
+			fanoutChunkExecutor.execute(() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs));
 		}
 	}
 
@@ -130,6 +117,10 @@ public class MarketEventBroadcaster {
 	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs) {
 		try {
 			webSocketSession.sendMessage(message);
+			ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
+			if (clientSession != null) {
+				clientSession.markOutboundSent(System.currentTimeMillis());
+			}
 			webSocketMetrics.eventDelivered();
 			if (sourceTs != null) {
 				long latencyMs = System.currentTimeMillis() - sourceTs;

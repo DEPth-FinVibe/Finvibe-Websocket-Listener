@@ -33,6 +33,11 @@ public class WatchRenewScheduler {
 				continue;
 			}
 
+			if (clientSession.hasPendingDataTasks() || clientSession.getQueuedTaskCount() > 0) {
+				webSocketMetrics.maintenanceSkipped("renew", "backlog");
+				continue;
+			}
+
 			boolean accepted = clientSession.enqueueSessionTask(() -> renewSingleSession(clientSession));
 			if (!accepted) {
 				webSocketMetrics.sessionQueueOverflow("watch_renew_drop");

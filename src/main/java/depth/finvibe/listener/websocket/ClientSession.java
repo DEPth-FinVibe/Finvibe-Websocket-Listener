@@ -27,6 +27,7 @@ public class ClientSession {
 	private volatile boolean authenticated;
 	private volatile long lastPongAtEpochMs;
 	private volatile long lastPingAtEpochMs;
+	private volatile long lastOutboundAtEpochMs;
 	private volatile boolean pingPending;
 	private volatile int missedPongCount;
 	private final Set<Long> subscribedStockIds = ConcurrentHashMap.newKeySet();
@@ -35,6 +36,7 @@ public class ClientSession {
 		this.webSocketSession = webSocketSession;
 		this.connectedAtEpochMs = nowEpochMs;
 		this.lastPongAtEpochMs = nowEpochMs;
+		this.lastOutboundAtEpochMs = nowEpochMs;
 		this.virtualTaskExecutor = virtualTaskExecutor;
 		this.sessionTaskQueue = new ArrayBlockingQueue<>(Math.max(32, queueCapacity));
 	}
@@ -67,6 +69,10 @@ public class ClientSession {
 		return lastPingAtEpochMs;
 	}
 
+	public long getLastOutboundAtEpochMs() {
+		return lastOutboundAtEpochMs;
+	}
+
 	public boolean isPingPending() {
 		return pingPending;
 	}
@@ -89,6 +95,10 @@ public class ClientSession {
 	public synchronized void markPingSent(long nowEpochMs) {
 		this.lastPingAtEpochMs = nowEpochMs;
 		this.pingPending = true;
+	}
+
+	public void markOutboundSent(long nowEpochMs) {
+		this.lastOutboundAtEpochMs = nowEpochMs;
 	}
 
 	public synchronized int incrementMissedPong() {
@@ -139,6 +149,10 @@ public class ClientSession {
 
 	public int getQueuedTaskCount() {
 		return sessionTaskQueue.size();
+	}
+
+	public boolean hasPendingDataTasks() {
+		return !latestDataTasksByTopic.isEmpty();
 	}
 
 	public long getConnectedDurationMs(long nowEpochMs) {
