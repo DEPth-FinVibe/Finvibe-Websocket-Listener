@@ -3,7 +3,10 @@ package depth.finvibe.listener.metrics;
 import depth.finvibe.listener.websocket.SessionRegistry;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
+
+import java.time.Duration;
 
 @Component
 public class WebSocketMetrics {
@@ -95,6 +98,10 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_redis_events_consumed_total").increment();
 	}
 
+	public void redisEventSourceToConsumeLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_source_to_consume_latency", latencyMs);
+	}
+
 	public void redisEventFailed() {
 		meterRegistry.counter("finvibe_ws_redis_events_failed_total").increment();
 	}
@@ -103,8 +110,20 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_events_broadcast_total").increment();
 	}
 
+	public void eventSourceToBroadcastLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_source_to_broadcast_latency", latencyMs);
+	}
+
+	public void eventSourceToEnqueueLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_source_to_enqueue_latency", latencyMs);
+	}
+
 	public void eventDelivered() {
 		meterRegistry.counter("finvibe_ws_event_deliveries_total").increment();
+	}
+
+	public void eventSourceToDeliveryLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_source_to_delivery_latency", latencyMs);
 	}
 
 	public void eventDeliveryFailed() {
@@ -139,5 +158,14 @@ public class WebSocketMetrics {
 
 	public void sessionTaskFailure(String stage) {
 		meterRegistry.counter("finvibe_ws_session_task_failures_total", "stage", stage).increment();
+	}
+
+	private void recordLatency(String metricName, long latencyMs) {
+		long safeLatencyMs = Math.max(0, latencyMs);
+		Timer.builder(metricName)
+				.description("WebSocket event latency in listener pipeline")
+				.publishPercentileHistogram()
+				.register(meterRegistry)
+				.record(Duration.ofMillis(safeLatencyMs));
 	}
 }

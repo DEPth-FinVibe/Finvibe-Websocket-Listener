@@ -48,14 +48,20 @@ public class MarketEventBroadcaster {
 		if (stockId == null) {
 			return;
 		}
+		long broadcastedAt = System.currentTimeMillis();
+		Long sourceTs = longOrNull(currentPriceEvent.path("ts"));
 
 		ObjectNode payload = objectMapper.createObjectNode();
 		payload.put("type", "event");
 		payload.put("topic", "quote:" + stockId);
-		payload.put("ts", System.currentTimeMillis());
+		payload.put("ts", broadcastedAt);
 
 		ObjectNode data = payload.putObject("data");
 		data.put("stockId", stockId);
+		if (sourceTs != null) {
+			data.put("eventTs", sourceTs);
+		}
+		data.put("emittedAt", broadcastedAt);
 		copyNumber(currentPriceEvent, data, "close", "price");
 		copyNumber(currentPriceEvent, data, "prevDayChangePct", "prevDayChangePct");
 		copyNumber(currentPriceEvent, data, "volume", "volume");
@@ -70,11 +76,14 @@ public class MarketEventBroadcaster {
 
 		TextMessage message = new TextMessage(serialized);
 		webSocketMetrics.eventBroadcasted();
+		if (sourceTs != null) {
+			webSocketMetrics.eventSourceToBroadcastLatency(broadcastedAt - sourceTs);
+		}
 		var subscribers = sessionRegistry.getSubscribers(stockId);
 		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
 		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
 		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
-			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId);
+			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs);
 			return;
 		}
 
@@ -84,7 +93,7 @@ public class MarketEventBroadcaster {
 			int chunkStart = start;
 			int chunkEnd = end;
 			futures.add(CompletableFuture.runAsync(
-					() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId),
+					() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs),
 					fanoutChunkExecutor
 			));
 		}
@@ -96,15 +105,18 @@ public class MarketEventBroadcaster {
 		}
 	}
 
-	private void enqueueChunk(List<ClientSession> subscribers, int start, int end, TextMessage message, long stockId) {
+	private void enqueueChunk(List<ClientSession> subscribers, int start, int end, TextMessage message, long stockId, Long sourceTs) {
 		for (int index = start; index < end; index++) {
 			ClientSession clientSession = subscribers.get(index);
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
 				continue;
 			}
+			if (sourceTs != null) {
+				webSocketMetrics.eventSourceToEnqueueLatency(System.currentTimeMillis() - sourceTs);
+			}
 
-			boolean accepted = clientSession.enqueueSessionTask(() -> deliverEvent(webSocketSession, message, stockId));
+			boolean accepted = clientSession.enqueueSessionTask(() -> deliverEvent(webSocketSession, message, stockId, sourceTs));
 			if (!accepted) {
 				webSocketMetrics.sessionQueueOverflow("broadcast_event_drop");
 				webSocketMetrics.eventDeliveryFailed("queue_overflow_drop");
@@ -112,10 +124,13 @@ public class MarketEventBroadcaster {
 		}
 	}
 
-	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId) {
+	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs) {
 		try {
 			webSocketSession.sendMessage(message);
 			webSocketMetrics.eventDelivered();
+			if (sourceTs != null) {
+				webSocketMetrics.eventSourceToDeliveryLatency(System.currentTimeMillis() - sourceTs);
+			}
 		} catch (SessionLimitExceededException ex) {
 			webSocketMetrics.eventDeliveryFailed();
 			webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");
@@ -173,4 +188,5 @@ public class MarketEventBroadcaster {
 			target.set(targetField, value);
 		}
 	}
+
 }

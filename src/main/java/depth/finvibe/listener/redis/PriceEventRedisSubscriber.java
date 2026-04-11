@@ -26,11 +26,23 @@ public class PriceEventRedisSubscriber implements MessageListener {
 		String payload = new String(message.getBody(), StandardCharsets.UTF_8);
 		try {
 			JsonNode event = objectMapper.readTree(payload);
+			long consumedAt = System.currentTimeMillis();
+			Long sourceTs = longOrNull(event.path("ts"));
 			webSocketMetrics.redisEventConsumed();
+			if (sourceTs != null) {
+				webSocketMetrics.redisEventSourceToConsumeLatency(consumedAt - sourceTs);
+			}
 			marketEventBroadcaster.broadcastCurrentPrice(event);
 		} catch (Exception ex) {
 			webSocketMetrics.redisEventFailed();
 			log.warn("Failed to consume current-price redis payload.", ex);
 		}
+	}
+
+	private Long longOrNull(JsonNode node) {
+		if (node == null || node.isNull() || !node.isNumber()) {
+			return null;
+		}
+		return node.asLong();
 	}
 }
