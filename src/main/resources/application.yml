@@ -27,6 +27,7 @@ listener:
     pong-timeout-ms: ${WS_PONG_TIMEOUT_MS:45000}
     max-missed-pongs: ${WS_MAX_MISSED_PONGS:4}
     renew-interval-ms: ${WS_RENEW_INTERVAL_MS:120000}
+    event-dispatch-parallelism: ${WS_EVENT_DISPATCH_PARALLELISM:4}
     fanout-chunk-size: ${WS_FANOUT_CHUNK_SIZE:256}
     fanout-chunk-parallelism: ${WS_FANOUT_CHUNK_PARALLELISM:4}
     send-time-limit-ms: ${WS_SEND_TIME_LIMIT_MS:10000}

@@ -40,6 +40,7 @@
 - `finvibe_ws_event_source_to_broadcast_latency_seconds_bucket`
 - `finvibe_ws_event_source_to_enqueue_latency_seconds_bucket`
 - `finvibe_ws_event_source_to_delivery_latency_seconds_bucket`
+- `finvibe_ws_event_ingress_coalesced_total`
 
 ### Redis exporter 메트릭
 
@@ -111,6 +112,7 @@ histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_enqueue_latency_sec
 - `source_to_broadcast`가 높으면 listener 내부 이벤트 처리/직렬화가 밀리는 것
 - `source_to_enqueue`가 높으면 fanout scheduling이 밀리는 것
 - `source_to_delivery`만 높으면 최종 outbound/session write 경로가 병목일 가능성이 큼
+- `event_ingress_coalesced_total`가 높으면 Redis ingress에서 최신값 덮어쓰기가 많이 일어나고 있다는 뜻이며, consume 경로를 fanout에서 분리한 효과를 보여준다
 
 ## 권장 사용법
 

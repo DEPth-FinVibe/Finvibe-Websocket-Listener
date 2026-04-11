@@ -18,4 +18,9 @@ public class VirtualThreadExecutorConfig {
 	public ExecutorService listenerFanoutChunkExecutor(WebSocketProperties webSocketProperties) {
 		return Executors.newFixedThreadPool(Math.max(1, webSocketProperties.fanoutChunkParallelism()));
 	}
+
+	@Bean(name = "listenerMarketEventExecutor", destroyMethod = "close")
+	public ExecutorService listenerMarketEventExecutor(WebSocketProperties webSocketProperties) {
+		return Executors.newFixedThreadPool(Math.max(1, webSocketProperties.eventDispatchParallelism()));
+	}
 }

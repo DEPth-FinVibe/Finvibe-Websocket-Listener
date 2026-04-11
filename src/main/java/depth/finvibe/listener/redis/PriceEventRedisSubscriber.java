@@ -1,25 +1,34 @@
 package depth.finvibe.listener.redis;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
-import depth.finvibe.listener.websocket.MarketEventBroadcaster;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import depth.finvibe.listener.websocket.MarketEventIngressDispatcher;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class PriceEventRedisSubscriber implements MessageListener {
+	private static final Logger log = LoggerFactory.getLogger(PriceEventRedisSubscriber.class);
 
 	private final ObjectMapper objectMapper;
-	private final MarketEventBroadcaster marketEventBroadcaster;
+	private final MarketEventIngressDispatcher marketEventIngressDispatcher;
 	private final WebSocketMetrics webSocketMetrics;
+
+	public PriceEventRedisSubscriber(
+			ObjectMapper objectMapper,
+			MarketEventIngressDispatcher marketEventIngressDispatcher,
+			WebSocketMetrics webSocketMetrics
+	) {
+		this.objectMapper = objectMapper;
+		this.marketEventIngressDispatcher = marketEventIngressDispatcher;
+		this.webSocketMetrics = webSocketMetrics;
+	}
 
 	@Override
 	public void onMessage(Message message, byte[] pattern) {
@@ -32,7 +41,7 @@ public class PriceEventRedisSubscriber implements MessageListener {
 			if (sourceTs != null) {
 				webSocketMetrics.redisEventSourceToConsumeLatency(consumedAt - sourceTs);
 			}
-			marketEventBroadcaster.broadcastCurrentPrice(event);
+			marketEventIngressDispatcher.submit(event);
 		} catch (Exception ex) {
 			webSocketMetrics.redisEventFailed();
 			log.warn("Failed to consume current-price redis payload.", ex);
