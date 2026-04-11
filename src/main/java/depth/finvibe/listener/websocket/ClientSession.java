@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -18,6 +19,8 @@ public class ClientSession {
 	private final long connectedAtEpochMs;
 	private final Executor virtualTaskExecutor;
 	private final ArrayBlockingQueue<Runnable> sessionTaskQueue;
+	private final ConcurrentHashMap<String, Runnable> latestDataTasksByTopic = new ConcurrentHashMap<>();
+	private final ConcurrentLinkedQueue<String> pendingDataTopics = new ConcurrentLinkedQueue<>();
 	private final AtomicBoolean queueDraining = new AtomicBoolean(false);
 	private volatile boolean queueClosed;
 	private volatile UUID userId;
@@ -120,6 +123,20 @@ public class ClientSession {
 		return true;
 	}
 
+	public boolean upsertLatestDataTask(String topic, Runnable task) {
+		if (queueClosed) {
+			return false;
+		}
+
+		Runnable previous = latestDataTasksByTopic.put(topic, task);
+		if (previous == null) {
+			pendingDataTopics.offer(topic);
+		}
+
+		scheduleQueueDrain();
+		return previous != null;
+	}
+
 	public int getQueuedTaskCount() {
 		return sessionTaskQueue.size();
 	}
@@ -131,6 +148,8 @@ public class ClientSession {
 	public void closeQueue() {
 		queueClosed = true;
 		sessionTaskQueue.clear();
+		pendingDataTopics.clear();
+		latestDataTasksByTopic.clear();
 	}
 
 	private void scheduleQueueDrain() {
@@ -146,7 +165,14 @@ public class ClientSession {
 			while (!queueClosed) {
 				Runnable task = sessionTaskQueue.poll();
 				if (task == null) {
-					break;
+					String topic = pendingDataTopics.poll();
+					if (topic == null) {
+						break;
+					}
+					task = latestDataTasksByTopic.remove(topic);
+					if (task == null) {
+						continue;
+					}
 				}
 				try {
 					task.run();

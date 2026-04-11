@@ -115,6 +115,14 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_event_ingress_coalesced_total").increment();
 	}
 
+	public void eventOutboundCoalesced() {
+		meterRegistry.counter("finvibe_ws_event_outbound_coalesced_total").increment();
+	}
+
+	public void eventOutboundStaleDrop() {
+		meterRegistry.counter("finvibe_ws_event_outbound_stale_drop_total").increment();
+	}
+
 	public void eventSourceToBroadcastLatency(long latencyMs) {
 		recordLatency("finvibe_ws_event_source_to_broadcast_latency", latencyMs);
 	}

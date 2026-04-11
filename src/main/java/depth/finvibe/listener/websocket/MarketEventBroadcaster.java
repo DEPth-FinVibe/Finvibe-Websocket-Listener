@@ -116,10 +116,13 @@ public class MarketEventBroadcaster {
 				webSocketMetrics.eventSourceToEnqueueLatency(System.currentTimeMillis() - sourceTs);
 			}
 
-			boolean accepted = clientSession.enqueueSessionTask(() -> deliverEvent(webSocketSession, message, stockId, sourceTs));
-			if (!accepted) {
-				webSocketMetrics.sessionQueueOverflow("broadcast_event_drop");
-				webSocketMetrics.eventDeliveryFailed("queue_overflow_drop");
+			boolean replaced = clientSession.upsertLatestDataTask(
+					"quote:" + stockId,
+					() -> deliverEvent(webSocketSession, message, stockId, sourceTs)
+			);
+			if (replaced) {
+				webSocketMetrics.eventOutboundCoalesced();
+				webSocketMetrics.eventOutboundStaleDrop();
 			}
 		}
 	}
