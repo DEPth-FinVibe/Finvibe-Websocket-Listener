@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ClientSession {
 	private static final Logger log = LoggerFactory.getLogger(ClientSession.class);
+	private static final int CONTROL_TASK_BURST_LIMIT = 2;
 
 	private final WebSocketSession webSocketSession;
 	private final long connectedAtEpochMs;
@@ -175,19 +176,40 @@ public class ClientSession {
 	}
 
 	private void drainQueueSafely() {
+		int consecutiveControlTasks = 0;
 		try {
 			while (!queueClosed) {
-				Runnable task = sessionTaskQueue.poll();
-				if (task == null) {
-					String topic = pendingDataTopics.poll();
-					if (topic == null) {
-						break;
-					}
-					task = latestDataTasksByTopic.remove(topic);
-					if (task == null) {
-						continue;
+				Runnable task = null;
+
+				if (consecutiveControlTasks < CONTROL_TASK_BURST_LIMIT) {
+					task = sessionTaskQueue.poll();
+					if (task != null) {
+						consecutiveControlTasks += 1;
 					}
 				}
+
+				if (task == null) {
+					String topic = pendingDataTopics.poll();
+					if (topic != null) {
+						task = latestDataTasksByTopic.remove(topic);
+						if (task == null) {
+							continue;
+						}
+						consecutiveControlTasks = 0;
+					}
+				}
+
+				if (task == null) {
+					task = sessionTaskQueue.poll();
+					if (task != null) {
+						consecutiveControlTasks += 1;
+					}
+				}
+
+				if (task == null) {
+					break;
+				}
+
 				try {
 					task.run();
 				} catch (Exception ex) {
