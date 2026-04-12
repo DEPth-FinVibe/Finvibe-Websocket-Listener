@@ -268,11 +268,15 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private void sendJson(WebSocketSession inboundSession, JsonNode payload) throws Exception {
 		WebSocketSession managedSession = resolveManagedSession(inboundSession);
 		Long createdAt = longOrNull(payload.path("ts"));
-		managedSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
+		String serialized = objectMapper.writeValueAsString(payload);
+		long writeStartedAt = System.currentTimeMillis();
+		managedSession.sendMessage(new TextMessage(serialized));
 		ClientSession clientSession = sessionRegistry.get(inboundSession.getId());
 		if (clientSession != null) {
 			clientSession.markOutboundSent(System.currentTimeMillis());
 		}
+		webSocketMetrics.outboundControlWriteDuration(System.currentTimeMillis() - writeStartedAt);
+		webSocketMetrics.outboundControlBytesSent(serialized.length());
 		if (createdAt != null) {
 			webSocketMetrics.outboundControlDeliveryLatency(System.currentTimeMillis() - createdAt);
 		}
@@ -291,8 +295,10 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		if (clientSession != null) {
 			webSocketMetrics.sessionQueueDepthOnEnqueue(clientSession.getQueuedTaskCount(), stage);
 		}
+		long enqueuedAt = System.currentTimeMillis();
 		boolean accepted = sessionRegistry.enqueueSessionTask(session.getId(), () -> {
 			try {
+				webSocketMetrics.sessionTaskQueueWait(stage, System.currentTimeMillis() - enqueuedAt);
 				task.run();
 			} catch (Exception ex) {
 				webSocketMetrics.sessionTaskFailure(stage);

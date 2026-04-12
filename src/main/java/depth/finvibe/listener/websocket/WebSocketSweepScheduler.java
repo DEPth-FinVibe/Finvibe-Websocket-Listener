@@ -49,6 +49,16 @@ public class WebSocketSweepScheduler {
 				continue;
 			}
 
+			if (shouldCloseSlowConsumer(clientSession, now)) {
+				webSocketMetrics.slowConsumerClosed("stale_data_backlog");
+				safeClose(
+						clientSession.getWebSocketSession(),
+						CloseStatus.SESSION_NOT_RELIABLE.withReason("slow_consumer"),
+						"sweep_slow_consumer"
+				);
+				continue;
+			}
+
 			if (shouldSkipHeartbeat(clientSession, now)) {
 				webSocketMetrics.maintenanceSkipped("heartbeat", "backlog_or_recent_outbound");
 				continue;
@@ -119,6 +129,18 @@ public class WebSocketSweepScheduler {
 		}
 		long recentOutboundElapsed = now - clientSession.getLastOutboundAtEpochMs();
 		return recentOutboundElapsed < Math.max(1000L, webSocketProperties.heartbeatIntervalMs() / 2);
+	}
+
+	private boolean shouldCloseSlowConsumer(ClientSession clientSession, long now) {
+		if (!clientSession.hasPendingDataTasks()) {
+			return false;
+		}
+		long pendingSince = clientSession.getPendingDataSinceEpochMs();
+		if (pendingSince <= 0L) {
+			return false;
+		}
+		long staleForMs = now - pendingSince;
+		return staleForMs >= webSocketProperties.slowConsumerGraceMs();
 	}
 
 	private void safeClose(WebSocketSession webSocketSession, CloseStatus status, String source) {

@@ -116,12 +116,15 @@ public class MarketEventBroadcaster {
 
 	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs) {
 		try {
+			long writeStartedAt = System.currentTimeMillis();
 			webSocketSession.sendMessage(message);
 			ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 			if (clientSession != null) {
 				clientSession.markOutboundSent(System.currentTimeMillis());
 			}
 			webSocketMetrics.eventDelivered();
+			webSocketMetrics.outboundDataWriteDuration(System.currentTimeMillis() - writeStartedAt);
+			webSocketMetrics.outboundDataBytesSent(message.getPayloadLength());
 			if (sourceTs != null) {
 				long latencyMs = System.currentTimeMillis() - sourceTs;
 				webSocketMetrics.eventSourceToDeliveryLatency(latencyMs);

@@ -181,18 +181,36 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_session_task_failures_total", "stage", stage).increment();
 	}
 
+	public void sessionTaskQueueWait(String stage, long latencyMs) {
+		recordLatency("finvibe_ws_session_task_queue_wait_latency", stage, latencyMs);
+	}
+
 	public void maintenanceSkipped(String operation, String reason) {
 		meterRegistry.counter("finvibe_ws_maintenance_skipped_total", "operation", operation, "reason", reason).increment();
 	}
 
+	public void slowConsumerClosed(String reason) {
+		meterRegistry.counter("finvibe_ws_slow_consumer_closed_total", "reason", reason).increment();
+	}
+
+	public void outboundDataWriteDuration(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_data_write_duration", latencyMs);
+	}
+
+	public void outboundControlWriteDuration(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_control_write_duration", latencyMs);
+	}
+
+	public void outboundDataBytesSent(int bytes) {
+		recordSummary("finvibe_ws_outbound_data_bytes_sent", bytes);
+	}
+
+	public void outboundControlBytesSent(int bytes) {
+		recordSummary("finvibe_ws_outbound_control_bytes_sent", bytes);
+	}
+
 	public void sessionQueueDepthOnEnqueue(int depth, String stage) {
-		DistributionSummary.builder("finvibe_ws_session_queue_depth_on_enqueue")
-				.description("Observed session queue depth at task enqueue time")
-				.baseUnit("tasks")
-				.tag("stage", stage)
-				.publishPercentileHistogram()
-				.register(meterRegistry)
-				.record(Math.max(0, depth));
+		recordSummary("finvibe_ws_session_queue_depth_on_enqueue", stage, depth);
 	}
 
 	private void recordLatency(String metricName, long latencyMs) {
@@ -202,5 +220,32 @@ public class WebSocketMetrics {
 				.publishPercentileHistogram()
 				.register(meterRegistry)
 				.record(Duration.ofMillis(safeLatencyMs));
+	}
+
+	private void recordLatency(String metricName, String stage, long latencyMs) {
+		long safeLatencyMs = Math.max(0, latencyMs);
+		Timer.builder(metricName)
+				.description("WebSocket stage latency in listener pipeline")
+				.tag("stage", stage)
+				.publishPercentileHistogram()
+				.register(meterRegistry)
+				.record(Duration.ofMillis(safeLatencyMs));
+	}
+
+	private void recordSummary(String metricName, int value) {
+		DistributionSummary.builder(metricName)
+				.baseUnit("bytes")
+				.publishPercentileHistogram()
+				.register(meterRegistry)
+				.record(Math.max(0, value));
+	}
+
+	private void recordSummary(String metricName, String stage, int value) {
+		DistributionSummary.builder(metricName)
+				.baseUnit("tasks")
+				.tag("stage", stage)
+				.publishPercentileHistogram()
+				.register(meterRegistry)
+				.record(Math.max(0, value));
 	}
 }

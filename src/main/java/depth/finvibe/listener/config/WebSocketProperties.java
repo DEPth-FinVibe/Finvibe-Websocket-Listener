@@ -10,6 +10,7 @@ public record WebSocketProperties(
 		long pongTimeoutMs,
 		int maxMissedPongs,
 		long renewIntervalMs,
+		long slowConsumerGraceMs,
 		int eventDispatchParallelism,
 		int fanoutChunkSize,
 		int fanoutChunkParallelism,

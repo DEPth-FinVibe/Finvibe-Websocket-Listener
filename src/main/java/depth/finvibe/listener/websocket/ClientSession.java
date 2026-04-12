@@ -29,6 +29,7 @@ public class ClientSession {
 	private volatile long lastPongAtEpochMs;
 	private volatile long lastPingAtEpochMs;
 	private volatile long lastOutboundAtEpochMs;
+	private volatile long pendingDataSinceEpochMs;
 	private volatile boolean pingPending;
 	private volatile int missedPongCount;
 	private final Set<Long> subscribedStockIds = ConcurrentHashMap.newKeySet();
@@ -38,6 +39,7 @@ public class ClientSession {
 		this.connectedAtEpochMs = nowEpochMs;
 		this.lastPongAtEpochMs = nowEpochMs;
 		this.lastOutboundAtEpochMs = nowEpochMs;
+		this.pendingDataSinceEpochMs = 0L;
 		this.virtualTaskExecutor = virtualTaskExecutor;
 		this.sessionTaskQueue = new ArrayBlockingQueue<>(Math.max(32, queueCapacity));
 	}
@@ -142,6 +144,9 @@ public class ClientSession {
 		Runnable previous = latestDataTasksByTopic.put(topic, task);
 		if (previous == null) {
 			pendingDataTopics.offer(topic);
+			if (pendingDataSinceEpochMs == 0L) {
+				pendingDataSinceEpochMs = System.currentTimeMillis();
+			}
 		}
 
 		scheduleQueueDrain();
@@ -154,6 +159,10 @@ public class ClientSession {
 
 	public boolean hasPendingDataTasks() {
 		return !latestDataTasksByTopic.isEmpty();
+	}
+
+	public long getPendingDataSinceEpochMs() {
+		return pendingDataSinceEpochMs;
 	}
 
 	public long getConnectedDurationMs(long nowEpochMs) {
@@ -206,12 +215,15 @@ public class ClientSession {
 					}
 				}
 
-				if (task == null) {
-					break;
-				}
+			if (task == null) {
+				break;
+			}
 
 				try {
 					task.run();
+					if (latestDataTasksByTopic.isEmpty() && pendingDataTopics.isEmpty()) {
+						pendingDataSinceEpochMs = 0L;
+					}
 				} catch (Exception ex) {
 					log.debug("Session task failed. sessionId={}", getSessionId(), ex);
 				}
