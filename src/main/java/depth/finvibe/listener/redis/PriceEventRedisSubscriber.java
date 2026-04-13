@@ -2,6 +2,7 @@ package depth.finvibe.listener.redis;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.websocket.MarketEventIngressDispatcher;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executor;
 
 @Component
 public class PriceEventRedisSubscriber implements MessageListener {
@@ -19,20 +21,27 @@ public class PriceEventRedisSubscriber implements MessageListener {
 	private final ObjectMapper objectMapper;
 	private final MarketEventIngressDispatcher marketEventIngressDispatcher;
 	private final WebSocketMetrics webSocketMetrics;
+	private final Executor virtualTaskExecutor;
 
 	public PriceEventRedisSubscriber(
 			ObjectMapper objectMapper,
 			MarketEventIngressDispatcher marketEventIngressDispatcher,
-			WebSocketMetrics webSocketMetrics
+			WebSocketMetrics webSocketMetrics,
+			@Qualifier("listenerVirtualTaskExecutor") Executor virtualTaskExecutor
 	) {
 		this.objectMapper = objectMapper;
 		this.marketEventIngressDispatcher = marketEventIngressDispatcher;
 		this.webSocketMetrics = webSocketMetrics;
+		this.virtualTaskExecutor = virtualTaskExecutor;
 	}
 
 	@Override
 	public void onMessage(Message message, byte[] pattern) {
 		String payload = new String(message.getBody(), StandardCharsets.UTF_8);
+		virtualTaskExecutor.execute(() -> processMessage(payload));
+	}
+
+	private void processMessage(String payload) {
 		try {
 			JsonNode event = objectMapper.readTree(payload);
 			long consumedAt = System.currentTimeMillis();
