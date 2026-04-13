@@ -28,6 +28,13 @@ public class WebSocketMetrics {
 		Gauge.builder("finvibe_ws_total_subscriptions", sessionRegistry, SessionRegistry::getTotalSubscriptions)
 				.description("Total websocket subscriptions on this instance")
 				.register(meterRegistry);
+
+		for (String executorName : new String[]{"fanout_chunk", "market_event"}) {
+			io.micrometer.core.instrument.Counter.builder("finvibe_ws_executor_task_dropped_total")
+					.description("Number of tasks dropped by executor due to queue saturation")
+					.tag("executor", executorName)
+					.register(meterRegistry);
+		}
 	}
 
 	public void connectionOpened() {
