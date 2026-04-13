@@ -7,7 +7,7 @@ spring:
     active: local
 
 server:
-  port: ${LISTENER_PORT:8090}
+  port: ${LISTENER_PORT:8080}
 
 management:
   endpoints:

@@ -23,7 +23,7 @@ services:
     mem_limit: ${LISTENER_MEMORY_LIMIT:-2560m}
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      LISTENER_PORT: 8090
+      LISTENER_PORT: 8080
       JAVA_TOOL_OPTIONS: "${LISTENER_JAVA_TOOL_OPTIONS:--Xms512m -Xmx2g -XX:+UseG1GC}"
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
@@ -40,10 +40,10 @@ services:
     labels:
       prometheus.scrape: "true"
       prometheus.job: finvibe-websocket-listener
-      prometheus.port: "8090"
+      prometheus.port: "8080"
       prometheus.path: /actuator/prometheus
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8090/actuator/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 5s
       retries: 5

@@ -19,11 +19,11 @@
 ./gradlew bootRun
 ```
 
-기본 포트는 `8090`이며, WebSocket 경로는 `/market/ws` 입니다.
+기본 포트는 `8080`이며, WebSocket 경로는 `/market/ws` 입니다.
 
 ## GitHub Actions 배포 설정
 
-`CD` 워크플로우(`.github/workflows/cd.yml`)를 사용하려면 아래 값을 설정해야 합니다.
+`CI` 워크플로우(`.github/workflows/ci.yml`)를 사용하려면 아래 값을 설정해야 합니다.
 
 ### GitHub Secrets (필수)
 

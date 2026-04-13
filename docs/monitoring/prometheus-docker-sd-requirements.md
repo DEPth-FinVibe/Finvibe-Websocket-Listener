@@ -14,7 +14,7 @@ This document defines the minimum requirements to scrape `Finvibe-Websocket-List
    - Actuator exposure includes `prometheus`.
 2. Include Prometheus registry dependency.
    - `io.micrometer:micrometer-registry-prometheus`
-3. Keep application port fixed to `8090` inside the container.
+3. Keep application port fixed to `8080` inside the container.
 
 ## Deployment Script Requirements
 
@@ -22,7 +22,7 @@ Listener container must be started with these labels:
 
 - `prometheus.scrape=true`
 - `prometheus.job=finvibe-websocket-listener`
-- `prometheus.port=8090`
+- `prometheus.port=8080`
 - `prometheus.path=/actuator/prometheus`
 
 Current CD workflow adds these labels in `docker run`.
