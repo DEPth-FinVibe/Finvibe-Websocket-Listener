@@ -230,7 +230,7 @@ public class ClientSession {
 			}
 		} finally {
 			queueDraining.set(false);
-			if (!queueClosed && !sessionTaskQueue.isEmpty()) {
+			if (!queueClosed && (!sessionTaskQueue.isEmpty() || !pendingDataTopics.isEmpty())) {
 				scheduleQueueDrain();
 			}
 		}

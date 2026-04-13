@@ -29,8 +29,10 @@ listener:
     renew-interval-ms: ${WS_RENEW_INTERVAL_MS:120000}
     slow-consumer-grace-ms: ${WS_SLOW_CONSUMER_GRACE_MS:10000}
     event-dispatch-parallelism: ${WS_EVENT_DISPATCH_PARALLELISM:4}
+    event-dispatch-queue-capacity: ${WS_EVENT_DISPATCH_QUEUE_CAPACITY:512}
     fanout-chunk-size: ${WS_FANOUT_CHUNK_SIZE:256}
     fanout-chunk-parallelism: ${WS_FANOUT_CHUNK_PARALLELISM:4}
+    fanout-chunk-queue-capacity: ${WS_FANOUT_CHUNK_QUEUE_CAPACITY:1024}
     send-time-limit-ms: ${WS_SEND_TIME_LIMIT_MS:10000}
     send-buffer-size-bytes: ${WS_SEND_BUFFER_SIZE_BYTES:262144}
     send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:DROP}
