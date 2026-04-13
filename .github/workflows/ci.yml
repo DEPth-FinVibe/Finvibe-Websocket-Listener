@@ -13,11 +13,16 @@ jobs:
       - name: Checkout websocket-listener repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
+<<<<<<< HEAD
           java-version: "21"
           distribution: "temurin"
+=======
+          distribution: temurin
+          java-version: '25'
+>>>>>>> 3939a91 (chore: Java 언어 버전 업데이트)
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
