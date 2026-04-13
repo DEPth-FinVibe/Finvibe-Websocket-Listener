@@ -1,18 +1,4 @@
-<<<<<<< HEAD
-FROM eclipse-temurin:21-jre
-=======
-FROM eclipse-temurin:25-jdk AS builder
-WORKDIR /app
-
-COPY gradlew gradlew
-COPY gradle gradle
-COPY build.gradle settings.gradle ./
-COPY src src
-
-RUN chmod +x ./gradlew && ./gradlew --no-daemon bootJar
-
 FROM eclipse-temurin:25-jre
->>>>>>> 3939a91 (chore: Java 언어 버전 업데이트)
 WORKDIR /app
 
 RUN apt-get update \
