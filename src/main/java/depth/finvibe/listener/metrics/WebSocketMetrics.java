@@ -193,6 +193,10 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_slow_consumer_closed_total", "reason", reason).increment();
 	}
 
+	public void executorTaskDropped(String executorName) {
+		meterRegistry.counter("finvibe_ws_executor_task_dropped_total", "executor", executorName).increment();
+	}
+
 	public void outboundDataWriteDuration(long latencyMs) {
 		recordLatency("finvibe_ws_outbound_data_write_duration", latencyMs);
 	}
