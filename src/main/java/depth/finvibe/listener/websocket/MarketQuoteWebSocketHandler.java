@@ -269,7 +269,9 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		WebSocketSession managedSession = resolveManagedSession(inboundSession);
 		Long createdAt = longOrNull(payload.path("ts"));
 		String serialized = objectMapper.writeValueAsString(payload);
+		long enqueuedAt = System.currentTimeMillis();
 		long writeStartedAt = System.currentTimeMillis();
+		webSocketMetrics.outboundControlEnqueueToWriteStartLatency(writeStartedAt - enqueuedAt);
 		managedSession.sendMessage(new TextMessage(serialized));
 		ClientSession clientSession = sessionRegistry.get(inboundSession.getId());
 		if (clientSession != null) {

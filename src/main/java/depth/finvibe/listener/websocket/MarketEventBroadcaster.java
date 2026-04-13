@@ -48,6 +48,7 @@ public class MarketEventBroadcaster {
 		}
 		long broadcastedAt = System.currentTimeMillis();
 		Long sourceTs = longOrNull(currentPriceEvent.path("ts"));
+		Long consumedAt = longOrNull(currentPriceEvent.path("consumedAt"));
 
 		ObjectNode payload = objectMapper.createObjectNode();
 		payload.put("type", "event");
@@ -77,6 +78,9 @@ public class MarketEventBroadcaster {
 		if (sourceTs != null) {
 			webSocketMetrics.eventSourceToBroadcastLatency(broadcastedAt - sourceTs);
 		}
+		if (consumedAt != null) {
+			webSocketMetrics.eventConsumeToBroadcastLatency(broadcastedAt - consumedAt);
+		}
 		var subscribers = sessionRegistry.getSubscribers(stockId);
 		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
 		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
@@ -102,10 +106,11 @@ public class MarketEventBroadcaster {
 			if (sourceTs != null) {
 				webSocketMetrics.eventSourceToEnqueueLatency(System.currentTimeMillis() - sourceTs);
 			}
+			webSocketMetrics.eventBroadcastToEnqueueLatency(System.currentTimeMillis() - broadcastedAt(message));
 
 			boolean replaced = clientSession.upsertLatestDataTask(
 					"quote:" + stockId,
-					() -> deliverEvent(webSocketSession, message, stockId, sourceTs)
+					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, System.currentTimeMillis())
 			);
 			if (replaced) {
 				webSocketMetrics.eventOutboundCoalesced();
@@ -114,9 +119,10 @@ public class MarketEventBroadcaster {
 		}
 	}
 
-	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs) {
+	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs, long enqueuedAt) {
 		try {
 			long writeStartedAt = System.currentTimeMillis();
+			webSocketMetrics.outboundDataEnqueueToWriteStartLatency(writeStartedAt - enqueuedAt);
 			webSocketSession.sendMessage(message);
 			ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 			if (clientSession != null) {
@@ -186,6 +192,18 @@ public class MarketEventBroadcaster {
 		if (value.isNumber()) {
 			target.set(targetField, value);
 		}
+	}
+
+	private long broadcastedAt(TextMessage message) {
+		try {
+			JsonNode root = objectMapper.readTree(message.getPayload());
+			JsonNode ts = root.path("ts");
+			if (ts.isNumber()) {
+				return ts.asLong();
+			}
+		} catch (Exception ignored) {
+		}
+		return System.currentTimeMillis();
 	}
 
 }

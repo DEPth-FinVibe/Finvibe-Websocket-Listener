@@ -134,8 +134,16 @@ public class WebSocketMetrics {
 		recordLatency("finvibe_ws_event_source_to_broadcast_latency", latencyMs);
 	}
 
+	public void eventConsumeToBroadcastLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_consume_to_broadcast_latency", latencyMs);
+	}
+
 	public void eventSourceToEnqueueLatency(long latencyMs) {
 		recordLatency("finvibe_ws_event_source_to_enqueue_latency", latencyMs);
+	}
+
+	public void eventBroadcastToEnqueueLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_broadcast_to_enqueue_latency", latencyMs);
 	}
 
 	public void eventDelivered() {
@@ -208,8 +216,16 @@ public class WebSocketMetrics {
 		recordLatency("finvibe_ws_outbound_data_write_duration", latencyMs);
 	}
 
+	public void outboundDataEnqueueToWriteStartLatency(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_data_enqueue_to_write_start_latency", latencyMs);
+	}
+
 	public void outboundControlWriteDuration(long latencyMs) {
 		recordLatency("finvibe_ws_outbound_control_write_duration", latencyMs);
+	}
+
+	public void outboundControlEnqueueToWriteStartLatency(long latencyMs) {
+		recordLatency("finvibe_ws_outbound_control_enqueue_to_write_start_latency", latencyMs);
 	}
 
 	public void outboundDataBytesSent(int bytes) {

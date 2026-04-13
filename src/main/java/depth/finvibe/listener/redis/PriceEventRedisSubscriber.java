@@ -46,6 +46,9 @@ public class PriceEventRedisSubscriber implements MessageListener {
 			JsonNode event = objectMapper.readTree(payload);
 			long consumedAt = System.currentTimeMillis();
 			Long sourceTs = longOrNull(event.path("ts"));
+			if (sourceTs != null && event instanceof tools.jackson.databind.node.ObjectNode objectNode) {
+				objectNode.put("consumedAt", consumedAt);
+			}
 			webSocketMetrics.redisEventConsumed();
 			if (sourceTs != null) {
 				webSocketMetrics.redisEventSourceToConsumeLatency(consumedAt - sourceTs);
