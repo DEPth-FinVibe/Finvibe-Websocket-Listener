@@ -266,6 +266,7 @@ public class WebSocketMetrics {
 		return timers.computeIfAbsent(metricName, key -> Timer.builder(key)
 				.description("WebSocket event latency in listener pipeline")
 				.publishPercentileHistogram()
+				.maximumExpectedValue(Duration.ofMinutes(2))
 				.register(meterRegistry));
 	}
 
@@ -275,6 +276,7 @@ public class WebSocketMetrics {
 				.description("WebSocket stage latency in listener pipeline")
 				.tag("stage", stage)
 				.publishPercentileHistogram()
+				.maximumExpectedValue(Duration.ofMinutes(2))
 				.register(meterRegistry));
 	}
 
