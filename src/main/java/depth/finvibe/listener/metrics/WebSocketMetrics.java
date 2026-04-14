@@ -158,6 +158,10 @@ public class WebSocketMetrics {
 		recordLatency("finvibe_ws_event_source_to_delivery_latency", latencyMs);
 	}
 
+	public void eventSourceToSendMessageLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_source_to_send_message_latency", latencyMs);
+	}
+
 	public void outboundDataDeliveryLatency(long latencyMs) {
 		recordLatency("finvibe_ws_outbound_data_delivery_latency", latencyMs);
 	}

@@ -85,7 +85,7 @@ public class MarketEventBroadcaster {
 		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
 		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
 		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
-			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, broadcastedAt, topic);
+			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs, broadcastedAt, topic);
 			webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
 			return;
 		}
@@ -97,7 +97,7 @@ public class MarketEventBroadcaster {
 			int chunkEnd = end;
 			fanoutChunkExecutor.execute(() -> {
 				try {
-					enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, broadcastedAt, topic);
+					enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs, broadcastedAt, topic);
 				} finally {
 					if (remainingChunks.decrementAndGet() == 0) {
 						webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
@@ -113,6 +113,7 @@ public class MarketEventBroadcaster {
 			int end,
 			TextMessage message,
 			long stockId,
+			Long sourceTs,
 			long broadcastedAt,
 			String topic
 	) {
@@ -126,7 +127,7 @@ public class MarketEventBroadcaster {
 
 			boolean replaced = clientSession.upsertLatestDataTask(
 					topic,
-					() -> deliverEvent(webSocketSession, message, stockId, broadcastedAt, enqueueStartedAt)
+					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, broadcastedAt, enqueueStartedAt)
 			);
 			long enqueueCompletedAt = System.currentTimeMillis();
 			webSocketMetrics.eventSourceToEnqueueLatency(enqueueCompletedAt - enqueueStartedAt);
@@ -138,7 +139,7 @@ public class MarketEventBroadcaster {
 		}
 	}
 
-	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, long broadcastedAt, long enqueuedAt) {
+	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs, long broadcastedAt, long enqueuedAt) {
 		try {
 			long writeStartedAt = System.currentTimeMillis();
 			webSocketMetrics.outboundDataEnqueueToWriteStartLatency(writeStartedAt - enqueuedAt);
@@ -151,6 +152,9 @@ public class MarketEventBroadcaster {
 			webSocketMetrics.eventDelivered();
 			webSocketMetrics.outboundDataWriteDuration(deliveredAt - writeStartedAt);
 			webSocketMetrics.outboundDataBytesSent(message.getPayloadLength());
+			if (sourceTs != null) {
+				webSocketMetrics.eventSourceToSendMessageLatency(deliveredAt - sourceTs);
+			}
 			webSocketMetrics.eventSourceToDeliveryLatency(deliveredAt - broadcastedAt);
 			webSocketMetrics.outboundDataDeliveryLatency(deliveredAt - enqueuedAt);
 		} catch (SessionLimitExceededException ex) {

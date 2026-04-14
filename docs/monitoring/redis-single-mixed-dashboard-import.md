@@ -96,6 +96,7 @@ listener fanout 경로가 먼저 막히는 신호다.
 - `broadcast_to_enqueue`: `broadcastCurrentPrice()` 시작부터 개별 세션 enqueue 완료까지
 - `source_to_enqueue`: 개별 세션 `upsertLatestDataTask()` enqueue 호출 자체에 걸린 시간
 - `source_to_delivery`: `broadcastCurrentPrice()` 시작부터 개별 `sendMessage()` 완료까지
+- `source_to_send_message`: Redis publish 시각(`sourceTs`)부터 개별 `sendMessage()` 완료까지의 종단간 시간
 - `outbound_data_delivery`: 개별 세션 enqueue 시작부터 `sendMessage()` 완료까지
 
 PromQL 예시:
@@ -108,6 +109,7 @@ histogram_quantile(0.95, sum(rate(finvibe_ws_event_broadcast_to_enqueue_latency_
 histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket[5m])) by (le))
 histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
 histogram_quantile(0.99, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_send_message_latency_seconds_bucket[5m])) by (le))
 histogram_quantile(0.95, sum(rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket[5m])) by (le))
 ```
 
@@ -119,6 +121,7 @@ histogram_quantile(0.95, sum(rate(finvibe_ws_outbound_data_delivery_latency_seco
 - `broadcast_to_enqueue`가 높으면 특정 세션까지 fanout이 도달하는 데 시간이 걸리는 것
 - `source_to_enqueue`가 높으면 `upsertLatestDataTask()` 자체가 느린 것
 - `source_to_delivery`가 높으면 broadcast 이후 세션 queue + write 완료까지가 느린 것
+- `source_to_send_message`가 높으면 Redis ingress부터 최종 websocket write 완료까지 전체 파이프라인이 느린 것
 - `outbound_data_delivery`가 높으면 개별 세션 enqueue 이후 delivery 완료까지가 느린 것
 - `event_ingress_coalesced_total`가 높으면 Redis ingress에서 최신값 덮어쓰기가 많이 일어나고 있다는 뜻이며, consume 경로를 fanout에서 분리한 효과를 보여준다
 

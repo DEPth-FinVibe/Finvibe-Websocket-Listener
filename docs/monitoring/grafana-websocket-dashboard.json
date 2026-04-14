@@ -758,8 +758,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Ingress / Broadcast 단계 p50/p95",
-      "description": "source_to_consume만 source ts 기준이며, 나머지는 내부 단계 시간이다.",
+      "title": "유입 / 브로드캐스트 단계 p50/p95",
+      "description": "source_to_consume만 Redis publish 시각 기준이며, 나머지는 리스너 내부 단계 시간이다.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -774,32 +774,32 @@
         {
           "refId": "A",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "source→consume p50"
+          "legendFormat": "Redis publish→consume p50"
         },
         {
           "refId": "B",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "source→consume p95"
+          "legendFormat": "Redis publish→consume p95"
         },
         {
           "refId": "C",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_consume_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "consume→broadcast p50"
+          "legendFormat": "consume→broadcast 시작 p50"
         },
         {
           "refId": "D",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_consume_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "consume→broadcast p95"
+          "legendFormat": "consume→broadcast 시작 p95"
         },
         {
           "refId": "E",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast fanout 완료 p50"
+          "legendFormat": "브로드캐스트 fanout 완료 p50"
         },
         {
           "refId": "F",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast fanout 완료 p95"
+          "legendFormat": "브로드캐스트 fanout 완료 p95"
         }
       ],
       "fieldConfig": {
@@ -837,12 +837,12 @@
         {
           "refId": "A",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_broadcast_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast→enqueue p50"
+          "legendFormat": "브로드캐스트→enqueue 완료 p50"
         },
         {
           "refId": "B",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_broadcast_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast→enqueue p95"
+          "legendFormat": "브로드캐스트→enqueue 완료 p95"
         },
         {
           "refId": "C",
@@ -874,7 +874,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Delivery 단계 p50/p95",
+      "title": "전달 단계 p50/p95",
       "description": "source_to_delivery는 broadcast 시작부터 sendMessage 완료까지, outbound_data_delivery는 개별 세션 enqueue 시작부터 sendMessage 완료까지다.",
       "gridPos": {
         "h": 8,
@@ -890,22 +890,22 @@
         {
           "refId": "A",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast→delivery p50"
+          "legendFormat": "브로드캐스트→전달 완료 p50"
         },
         {
           "refId": "B",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "broadcast→delivery p95"
+          "legendFormat": "브로드캐스트→전달 완료 p95"
         },
         {
           "refId": "C",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "enqueue→delivery p50"
+          "legendFormat": "enqueue→전달 완료 p50"
         },
         {
           "refId": "D",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "enqueue→delivery p95"
+          "legendFormat": "enqueue→전달 완료 p95"
         }
       ],
       "fieldConfig": {
@@ -927,7 +927,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Queue / Write 단계 p50/p95",
+      "title": "큐 대기 / 쓰기 단계 p50/p95",
       "description": "세션 queue 대기 시간과 실제 sendMessage 쓰기 시간을 분리해서 본다.",
       "gridPos": {
         "h": 8,
@@ -943,22 +943,65 @@
         {
           "refId": "A",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_enqueue_to_write_start_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "queue wait p50"
+          "legendFormat": "세션 큐 대기 p50"
         },
         {
           "refId": "B",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_enqueue_to_write_start_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "queue wait p95"
+          "legendFormat": "세션 큐 대기 p95"
         },
         {
           "refId": "C",
           "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_write_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "write duration p50"
+          "legendFormat": "sendMessage 쓰기 p50"
         },
         {
           "refId": "D",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_write_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "write duration p95"
+          "legendFormat": "sendMessage 쓰기 p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "종단간 전달 지연 p50/p95",
+      "description": "Redis publish 시각(sourceTs)부터 실제 websocket sendMessage 완료까지의 전체 시간이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 82
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_send_message_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Redis publish→sendMessage 완료 p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_send_message_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "Redis publish→sendMessage 완료 p95"
         }
       ],
       "fieldConfig": {
@@ -1045,6 +1088,6 @@
   "timezone": "",
   "title": "Finvibe 웹소켓 리스너 메트릭",
   "uid": "finvibe-ws-listener",
-  "version": 4,
+  "version": 5,
   "weekStart": ""
 }
