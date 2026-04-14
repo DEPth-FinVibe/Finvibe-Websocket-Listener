@@ -15,6 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executor;
 
 @Component
@@ -47,6 +48,7 @@ public class MarketEventBroadcaster {
 			return;
 		}
 		long broadcastedAt = System.currentTimeMillis();
+		long fanoutStartedAt = broadcastedAt;
 		Long sourceTs = longOrNull(currentPriceEvent.path("ts"));
 		Long consumedAt = longOrNull(currentPriceEvent.path("consumedAt"));
 
@@ -75,9 +77,6 @@ public class MarketEventBroadcaster {
 
 		TextMessage message = new TextMessage(serialized);
 		webSocketMetrics.eventBroadcasted();
-		if (sourceTs != null) {
-			webSocketMetrics.eventSourceToBroadcastLatency(broadcastedAt - sourceTs);
-		}
 		if (consumedAt != null) {
 			webSocketMetrics.eventConsumeToBroadcastLatency(broadcastedAt - consumedAt);
 		}
@@ -86,14 +85,25 @@ public class MarketEventBroadcaster {
 		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
 		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
 		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
-			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs, broadcastedAt, topic);
+			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, broadcastedAt, topic);
+			webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
 			return;
 		}
+		int chunkCount = (subscribers.size() + chunkSize - 1) / chunkSize;
+		AtomicInteger remainingChunks = new AtomicInteger(chunkCount);
 		for (int start = 0; start < subscribers.size(); start += chunkSize) {
 			int end = Math.min(start + chunkSize, subscribers.size());
 			int chunkStart = start;
 			int chunkEnd = end;
-			fanoutChunkExecutor.execute(() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs, broadcastedAt, topic));
+			fanoutChunkExecutor.execute(() -> {
+				try {
+					enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, broadcastedAt, topic);
+				} finally {
+					if (remainingChunks.decrementAndGet() == 0) {
+						webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
+					}
+				}
+			});
 		}
 	}
 
@@ -103,7 +113,6 @@ public class MarketEventBroadcaster {
 			int end,
 			TextMessage message,
 			long stockId,
-			Long sourceTs,
 			long broadcastedAt,
 			String topic
 	) {
@@ -113,16 +122,15 @@ public class MarketEventBroadcaster {
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
 				continue;
 			}
-			long enqueuedAt = System.currentTimeMillis();
-			if (sourceTs != null) {
-				webSocketMetrics.eventSourceToEnqueueLatency(enqueuedAt - sourceTs);
-			}
-			webSocketMetrics.eventBroadcastToEnqueueLatency(enqueuedAt - broadcastedAt);
+			long enqueueStartedAt = System.currentTimeMillis();
 
 			boolean replaced = clientSession.upsertLatestDataTask(
 					topic,
-					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, enqueuedAt)
+					() -> deliverEvent(webSocketSession, message, stockId, broadcastedAt, enqueueStartedAt)
 			);
+			long enqueueCompletedAt = System.currentTimeMillis();
+			webSocketMetrics.eventSourceToEnqueueLatency(enqueueCompletedAt - enqueueStartedAt);
+			webSocketMetrics.eventBroadcastToEnqueueLatency(enqueueCompletedAt - broadcastedAt);
 			if (replaced) {
 				webSocketMetrics.eventOutboundCoalesced();
 				webSocketMetrics.eventOutboundStaleDrop();
@@ -130,23 +138,21 @@ public class MarketEventBroadcaster {
 		}
 	}
 
-	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs, long enqueuedAt) {
+	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, long broadcastedAt, long enqueuedAt) {
 		try {
 			long writeStartedAt = System.currentTimeMillis();
 			webSocketMetrics.outboundDataEnqueueToWriteStartLatency(writeStartedAt - enqueuedAt);
 			webSocketSession.sendMessage(message);
+			long deliveredAt = System.currentTimeMillis();
 			ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
 			if (clientSession != null) {
-				clientSession.markOutboundSent(System.currentTimeMillis());
+				clientSession.markOutboundSent(deliveredAt);
 			}
 			webSocketMetrics.eventDelivered();
-			webSocketMetrics.outboundDataWriteDuration(System.currentTimeMillis() - writeStartedAt);
+			webSocketMetrics.outboundDataWriteDuration(deliveredAt - writeStartedAt);
 			webSocketMetrics.outboundDataBytesSent(message.getPayloadLength());
-			if (sourceTs != null) {
-				long latencyMs = System.currentTimeMillis() - sourceTs;
-				webSocketMetrics.eventSourceToDeliveryLatency(latencyMs);
-				webSocketMetrics.outboundDataDeliveryLatency(latencyMs);
-			}
+			webSocketMetrics.eventSourceToDeliveryLatency(deliveredAt - broadcastedAt);
+			webSocketMetrics.outboundDataDeliveryLatency(deliveredAt - enqueuedAt);
 		} catch (SessionLimitExceededException ex) {
 			webSocketMetrics.eventDeliveryFailed();
 			webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");

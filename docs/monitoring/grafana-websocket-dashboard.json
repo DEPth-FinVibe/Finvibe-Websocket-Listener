@@ -744,6 +744,239 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "type": "row",
+      "title": "이벤트 단계별 지연",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "collapsed": false
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingress / Broadcast 단계 p50/p95",
+      "description": "source_to_consume만 source ts 기준이며, 나머지는 내부 단계 시간이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "source→consume p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "source→consume p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_consume_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "consume→broadcast p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_consume_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "consume→broadcast p95"
+        },
+        {
+          "refId": "E",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast fanout 완료 p50"
+        },
+        {
+          "refId": "F",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast fanout 완료 p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Enqueue 단계 p50/p95",
+      "description": "broadcast_to_enqueue는 broadcast 시작부터 개별 세션 enqueue 완료까지, source_to_enqueue는 upsertLatestDataTask 호출 자체의 소요 시간이다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_broadcast_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast→enqueue p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_broadcast_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast→enqueue p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "enqueue 호출 p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "enqueue 호출 p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Delivery 단계 p50/p95",
+      "description": "source_to_delivery는 broadcast 시작부터 sendMessage 완료까지, outbound_data_delivery는 개별 세션 enqueue 시작부터 sendMessage 완료까지다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast→delivery p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "broadcast→delivery p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "enqueue→delivery p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "enqueue→delivery p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue / Write 단계 p50/p95",
+      "description": "세션 queue 대기 시간과 실제 sendMessage 쓰기 시간을 분리해서 본다.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_enqueue_to_write_start_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "queue wait p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_enqueue_to_write_start_latency_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "queue wait p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(finvibe_ws_outbound_data_write_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "write duration p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(finvibe_ws_outbound_data_write_duration_seconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "write duration p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "refresh": "10s",
@@ -812,6 +1045,6 @@
   "timezone": "",
   "title": "Finvibe 웹소켓 리스너 메트릭",
   "uid": "finvibe-ws-listener",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }

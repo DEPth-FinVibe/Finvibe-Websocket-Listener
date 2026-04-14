@@ -88,30 +88,38 @@ listener fanout 경로가 먼저 막히는 신호다.
 
 ### 6. Event-to-delivery latency
 
-새 메트릭은 source event timestamp(`ts`) 기준으로 listener 내부 구간 지연을 본다.
+새 메트릭은 listener 내부 구간 지연을 본다. 기존 메트릭 이름은 유지하지만, `source_to_consume`만 source event timestamp(`ts`) 기준이고 나머지는 내부 단계 시간을 뜻한다.
 
 - `source_to_consume`: Redis publish 이후 listener consume까지
-- `source_to_broadcast`: listener가 payload를 만들어 broadcast 시작할 때까지
-- `source_to_enqueue`: 세션 queue에 fanout task를 넣을 때까지
-- `source_to_delivery`: `sendMessage()` 완료 기준 listener delivery까지
+- `consume_to_broadcast`: Redis consume 완료부터 `broadcastCurrentPrice()` 시작까지
+- `source_to_broadcast`: `broadcastCurrentPrice()` 시작부터 모든 fanout chunk가 세션 queue enqueue를 마칠 때까지
+- `broadcast_to_enqueue`: `broadcastCurrentPrice()` 시작부터 개별 세션 enqueue 완료까지
+- `source_to_enqueue`: 개별 세션 `upsertLatestDataTask()` enqueue 호출 자체에 걸린 시간
+- `source_to_delivery`: `broadcastCurrentPrice()` 시작부터 개별 `sendMessage()` 완료까지
+- `outbound_data_delivery`: 개별 세션 enqueue 시작부터 `sendMessage()` 완료까지
 
 PromQL 예시:
 
 ```promql
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_consume_to_broadcast_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_broadcast_to_enqueue_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket[5m])) by (le))
 histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
 histogram_quantile(0.99, sum(rate(finvibe_ws_event_source_to_delivery_latency_seconds_bucket[5m])) by (le))
-
-histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_consume_latency_seconds_bucket[5m])) by (le))
-histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_broadcast_latency_seconds_bucket[5m])) by (le))
-histogram_quantile(0.95, sum(rate(finvibe_ws_event_source_to_enqueue_latency_seconds_bucket[5m])) by (le))
+histogram_quantile(0.95, sum(rate(finvibe_ws_outbound_data_delivery_latency_seconds_bucket[5m])) by (le))
 ```
 
 해석 포인트:
 
 - `source_to_consume`가 높으면 Redis ingress 또는 subscriber consume이 밀리는 것
-- `source_to_broadcast`가 높으면 listener 내부 이벤트 처리/직렬화가 밀리는 것
-- `source_to_enqueue`가 높으면 fanout scheduling이 밀리는 것
-- `source_to_delivery`만 높으면 최종 outbound/session write 경로가 병목일 가능성이 큼
+- `consume_to_broadcast`가 높으면 listener 내부 payload 생성/직렬화 진입 전 단계가 밀리는 것
+- `source_to_broadcast`가 높으면 fanout chunk 전체 완료가 느린 것
+- `broadcast_to_enqueue`가 높으면 특정 세션까지 fanout이 도달하는 데 시간이 걸리는 것
+- `source_to_enqueue`가 높으면 `upsertLatestDataTask()` 자체가 느린 것
+- `source_to_delivery`가 높으면 broadcast 이후 세션 queue + write 완료까지가 느린 것
+- `outbound_data_delivery`가 높으면 개별 세션 enqueue 이후 delivery 완료까지가 느린 것
 - `event_ingress_coalesced_total`가 높으면 Redis ingress에서 최신값 덮어쓰기가 많이 일어나고 있다는 뜻이며, consume 경로를 fanout에서 분리한 효과를 보여준다
 
 ## 권장 사용법
