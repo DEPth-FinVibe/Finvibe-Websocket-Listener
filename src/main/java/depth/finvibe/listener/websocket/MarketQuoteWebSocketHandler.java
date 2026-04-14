@@ -17,7 +17,9 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 @Component
 public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
@@ -28,19 +30,22 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private final CurrentWatcherRedisRepository currentWatcherRedisRepository;
 	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
+	private final Executor virtualTaskExecutor;
 
 	public MarketQuoteWebSocketHandler(
 			SessionRegistry sessionRegistry,
 			JwtTokenVerifier jwtTokenVerifier,
 			CurrentWatcherRedisRepository currentWatcherRedisRepository,
 			WebSocketMetrics webSocketMetrics,
-			ObjectMapper objectMapper
+			ObjectMapper objectMapper,
+			@org.springframework.beans.factory.annotation.Qualifier("listenerVirtualTaskExecutor") Executor virtualTaskExecutor
 	) {
 		this.sessionRegistry = sessionRegistry;
 		this.jwtTokenVerifier = jwtTokenVerifier;
 		this.currentWatcherRedisRepository = currentWatcherRedisRepository;
 		this.webSocketMetrics = webSocketMetrics;
 		this.objectMapper = objectMapper;
+		this.virtualTaskExecutor = virtualTaskExecutor;
 	}
 
 	@Override
@@ -129,12 +134,13 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 
 		List<String> subscribed = new ArrayList<>();
 		List<String> rejected = new ArrayList<>();
+		List<Long> toSaveInWatcher = new ArrayList<>();
 		for (Long stockId : parseTopics(payload.path("topics"), rejected)) {
 			boolean added = sessionRegistry.subscribe(webSocketSession.getId(), stockId);
 			subscribed.add("quote:" + stockId);
 			if (added) {
 				webSocketMetrics.subscriptionAdded();
-				currentWatcherRedisRepository.save(clientSession.getUserId(), stockId);
+				toSaveInWatcher.add(stockId);
 			}
 		}
 
@@ -146,6 +152,19 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		ArrayNode rejectedNode = subscribeAck.putArray("rejected");
 		rejected.forEach(rejectedNode::add);
 		sendJson(webSocketSession, subscribeAck);
+
+		if (!toSaveInWatcher.isEmpty()) {
+			UUID userId = clientSession.getUserId();
+			virtualTaskExecutor.execute(() -> {
+				for (Long stockId : toSaveInWatcher) {
+					try {
+						currentWatcherRedisRepository.save(userId, stockId);
+					} catch (Exception ex) {
+						log.debug("Async watcher save failed. stockId={}", stockId, ex);
+					}
+				}
+			});
+		}
 	}
 
 	private void handleUnsubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
@@ -158,11 +177,12 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 
 		List<String> unsubscribed = new ArrayList<>();
 		List<String> rejected = new ArrayList<>();
+		List<Long> toRemoveFromWatcher = new ArrayList<>();
 		for (Long stockId : parseTopics(payload.path("topics"), rejected)) {
 			boolean removed = sessionRegistry.unsubscribe(webSocketSession.getId(), stockId);
 			if (removed) {
 				webSocketMetrics.subscriptionsRemoved(1);
-				currentWatcherRedisRepository.remove(clientSession.getUserId(), stockId);
+				toRemoveFromWatcher.add(stockId);
 			}
 			unsubscribed.add("quote:" + stockId);
 		}
@@ -175,6 +195,19 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		ArrayNode rejectedNode = unsubscribeAck.putArray("rejected");
 		rejected.forEach(rejectedNode::add);
 		sendJson(webSocketSession, unsubscribeAck);
+
+		if (!toRemoveFromWatcher.isEmpty()) {
+			UUID userId = clientSession.getUserId();
+			virtualTaskExecutor.execute(() -> {
+				for (Long stockId : toRemoveFromWatcher) {
+					try {
+						currentWatcherRedisRepository.remove(userId, stockId);
+					} catch (Exception ex) {
+						log.debug("Async watcher remove failed. stockId={}", stockId, ex);
+					}
+				}
+			});
+		}
 	}
 
 	private void handlePong(WebSocketSession webSocketSession) {
@@ -235,9 +268,17 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		}
 		webSocketMetrics.subscriptionsRemoved(removedSession.subscribedStockIds().size());
 
-		for (Long stockId : removedSession.subscribedStockIds()) {
-			currentWatcherRedisRepository.remove(removedSession.userId(), stockId);
-		}
+		UUID userId = removedSession.userId();
+		Set<Long> stockIds = Set.copyOf(removedSession.subscribedStockIds());
+		virtualTaskExecutor.execute(() -> {
+			for (Long stockId : stockIds) {
+				try {
+					currentWatcherRedisRepository.remove(userId, stockId);
+				} catch (Exception ex) {
+					log.debug("Async watcher remove on disconnect failed. stockId={}", stockId, ex);
+				}
+			}
+		});
 	}
 
 	private String closeCode(CloseStatus status) {

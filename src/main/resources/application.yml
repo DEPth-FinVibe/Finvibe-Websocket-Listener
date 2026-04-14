@@ -5,6 +5,9 @@ spring:
     import: optional:file:.env[.properties]
   profiles:
     active: local
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: ${LISTENER_PORT:8080}
