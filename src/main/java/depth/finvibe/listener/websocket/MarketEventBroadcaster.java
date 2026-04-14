@@ -82,35 +82,46 @@ public class MarketEventBroadcaster {
 			webSocketMetrics.eventConsumeToBroadcastLatency(broadcastedAt - consumedAt);
 		}
 		var subscribers = sessionRegistry.getSubscribers(stockId);
+		String topic = "quote:" + stockId;
 		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
 		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
 		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
-			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs);
+			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs, broadcastedAt, topic);
 			return;
 		}
 		for (int start = 0; start < subscribers.size(); start += chunkSize) {
 			int end = Math.min(start + chunkSize, subscribers.size());
 			int chunkStart = start;
 			int chunkEnd = end;
-			fanoutChunkExecutor.execute(() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs));
+			fanoutChunkExecutor.execute(() -> enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs, broadcastedAt, topic));
 		}
 	}
 
-	private void enqueueChunk(List<ClientSession> subscribers, int start, int end, TextMessage message, long stockId, Long sourceTs) {
+	private void enqueueChunk(
+			List<ClientSession> subscribers,
+			int start,
+			int end,
+			TextMessage message,
+			long stockId,
+			Long sourceTs,
+			long broadcastedAt,
+			String topic
+	) {
 		for (int index = start; index < end; index++) {
 			ClientSession clientSession = subscribers.get(index);
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
 				continue;
 			}
+			long enqueuedAt = System.currentTimeMillis();
 			if (sourceTs != null) {
-				webSocketMetrics.eventSourceToEnqueueLatency(System.currentTimeMillis() - sourceTs);
+				webSocketMetrics.eventSourceToEnqueueLatency(enqueuedAt - sourceTs);
 			}
-			webSocketMetrics.eventBroadcastToEnqueueLatency(System.currentTimeMillis() - broadcastedAt(message));
+			webSocketMetrics.eventBroadcastToEnqueueLatency(enqueuedAt - broadcastedAt);
 
 			boolean replaced = clientSession.upsertLatestDataTask(
-					"quote:" + stockId,
-					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, System.currentTimeMillis())
+					topic,
+					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, enqueuedAt)
 			);
 			if (replaced) {
 				webSocketMetrics.eventOutboundCoalesced();
@@ -192,18 +203,6 @@ public class MarketEventBroadcaster {
 		if (value.isNumber()) {
 			target.set(targetField, value);
 		}
-	}
-
-	private long broadcastedAt(TextMessage message) {
-		try {
-			JsonNode root = objectMapper.readTree(message.getPayload());
-			JsonNode ts = root.path("ts");
-			if (ts.isNumber()) {
-				return ts.asLong();
-			}
-		} catch (Exception ignored) {
-		}
-		return System.currentTimeMillis();
 	}
 
 }

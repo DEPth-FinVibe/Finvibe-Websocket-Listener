@@ -8,11 +8,15 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class WebSocketMetrics {
 
 	private final MeterRegistry meterRegistry;
+	private final Map<String, Timer> timers = new ConcurrentHashMap<>();
+	private final Map<String, DistributionSummary> summaries = new ConcurrentHashMap<>();
 
 	public WebSocketMetrics(MeterRegistry meterRegistry, SessionRegistry sessionRegistry) {
 		this.meterRegistry = meterRegistry;
@@ -242,37 +246,51 @@ public class WebSocketMetrics {
 
 	private void recordLatency(String metricName, long latencyMs) {
 		long safeLatencyMs = Math.max(0, latencyMs);
-		Timer.builder(metricName)
-				.description("WebSocket event latency in listener pipeline")
-				.publishPercentileHistogram()
-				.register(meterRegistry)
-				.record(Duration.ofMillis(safeLatencyMs));
+		timer(metricName).record(Duration.ofMillis(safeLatencyMs));
 	}
 
 	private void recordLatency(String metricName, String stage, long latencyMs) {
 		long safeLatencyMs = Math.max(0, latencyMs);
-		Timer.builder(metricName)
-				.description("WebSocket stage latency in listener pipeline")
-				.tag("stage", stage)
-				.publishPercentileHistogram()
-				.register(meterRegistry)
-				.record(Duration.ofMillis(safeLatencyMs));
+		timer(metricName, stage).record(Duration.ofMillis(safeLatencyMs));
 	}
 
 	private void recordSummary(String metricName, int value) {
-		DistributionSummary.builder(metricName)
-				.baseUnit("bytes")
-				.publishPercentileHistogram()
-				.register(meterRegistry)
-				.record(Math.max(0, value));
+		summary(metricName).record(Math.max(0, value));
 	}
 
 	private void recordSummary(String metricName, String stage, int value) {
-		DistributionSummary.builder(metricName)
+		summary(metricName, stage).record(Math.max(0, value));
+	}
+
+	private Timer timer(String metricName) {
+		return timers.computeIfAbsent(metricName, key -> Timer.builder(key)
+				.description("WebSocket event latency in listener pipeline")
+				.publishPercentileHistogram()
+				.register(meterRegistry));
+	}
+
+	private Timer timer(String metricName, String stage) {
+		String cacheKey = metricName + "|stage=" + stage;
+		return timers.computeIfAbsent(cacheKey, key -> Timer.builder(metricName)
+				.description("WebSocket stage latency in listener pipeline")
+				.tag("stage", stage)
+				.publishPercentileHistogram()
+				.register(meterRegistry));
+	}
+
+	private DistributionSummary summary(String metricName) {
+		return summaries.computeIfAbsent(metricName, key -> DistributionSummary.builder(key)
+				.baseUnit("bytes")
+				.publishPercentileHistogram()
+				.register(meterRegistry));
+	}
+
+	private DistributionSummary summary(String metricName, String stage) {
+		String cacheKey = metricName + "|stage=" + stage;
+		return summaries.computeIfAbsent(cacheKey, key -> DistributionSummary.builder(metricName)
 				.baseUnit("tasks")
 				.tag("stage", stage)
 				.publishPercentileHistogram()
-				.register(meterRegistry)
-				.record(Math.max(0, value));
+				.register(meterRegistry));
 	}
 }
