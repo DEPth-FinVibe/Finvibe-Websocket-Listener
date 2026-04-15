@@ -244,6 +244,10 @@ public class WebSocketMetrics {
 		recordSummary("finvibe_ws_outbound_control_bytes_sent", bytes);
 	}
 
+	public void redisPingLatency(long latencyMs) {
+		recordLatency("finvibe_ws_redis_ping_latency", latencyMs);
+	}
+
 	public void sessionQueueDepthOnEnqueue(int depth, String stage) {
 		recordSummary("finvibe_ws_session_queue_depth_on_enqueue", stage, depth);
 	}
