@@ -3,6 +3,7 @@ package depth.finvibe.listener.redis;
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,7 +20,7 @@ public class RedisPingScheduler {
 	public void ping() {
 		try {
 			long start = System.currentTimeMillis();
-			redisTemplate.execute((connection) -> connection.serverCommands().ping());
+			redisTemplate.execute((RedisCallback<String>) connection -> connection.ping());
 			webSocketMetrics.redisPingLatency(System.currentTimeMillis() - start);
 		} catch (Exception ex) {
 			log.warn("Redis ping failed", ex);
