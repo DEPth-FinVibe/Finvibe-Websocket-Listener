@@ -2,7 +2,7 @@ package depth.finvibe.listener.redis;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.connection.RedisCallback;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
