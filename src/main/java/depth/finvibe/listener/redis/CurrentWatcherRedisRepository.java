@@ -2,10 +2,14 @@ package depth.finvibe.listener.redis;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.connection.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -57,6 +61,31 @@ public class CurrentWatcherRedisRepository {
 			webSocketMetrics.watcherOp("remove");
 		} catch (Exception ex) {
 			webSocketMetrics.watcherError("remove");
+			throw ex;
+		}
+	}
+
+	public void batchRenew(Map<Long, Set<UUID>> watchersByStock) {
+		if (watchersByStock.isEmpty()) {
+			return;
+		}
+		try {
+			redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+				for (Map.Entry<Long, Set<UUID>> entry : watchersByStock.entrySet()) {
+					byte[] key = keyForStock(entry.getKey()).getBytes(StandardCharsets.UTF_8);
+					byte[][] members = entry.getValue().stream()
+							.map(uuid -> uuid.toString().getBytes(StandardCharsets.UTF_8))
+							.toArray(byte[][]::new);
+					if (members.length > 0) {
+						connection.setCommands().sAdd(key, members);
+					}
+					connection.keyCommands().expire(key, INDEX_TTL.getSeconds());
+				}
+				return null;
+			});
+			webSocketMetrics.watcherOp("batch_renew");
+		} catch (Exception ex) {
+			webSocketMetrics.watcherError("batch_renew");
 			throw ex;
 		}
 	}

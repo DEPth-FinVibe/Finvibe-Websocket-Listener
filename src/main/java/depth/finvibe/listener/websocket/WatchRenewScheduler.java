@@ -1,57 +1,47 @@
 package depth.finvibe.listener.websocket;
 
-import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.redis.CurrentWatcherRedisRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Component
 public class WatchRenewScheduler {
 
 	private final SessionRegistry sessionRegistry;
 	private final CurrentWatcherRedisRepository currentWatcherRedisRepository;
-	private final WebSocketMetrics webSocketMetrics;
 
 	public WatchRenewScheduler(
 			SessionRegistry sessionRegistry,
-			CurrentWatcherRedisRepository currentWatcherRedisRepository,
-			WebSocketMetrics webSocketMetrics
+			CurrentWatcherRedisRepository currentWatcherRedisRepository
 	) {
 		this.sessionRegistry = sessionRegistry;
 		this.currentWatcherRedisRepository = currentWatcherRedisRepository;
-		this.webSocketMetrics = webSocketMetrics;
 	}
 
 	@Scheduled(fixedDelayString = "${listener.websocket.renew-interval-ms:60000}")
 	public void renewSubscriptions() {
+		Map<Long, Set<UUID>> watchersByStock = new HashMap<>();
+
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
 			if (!clientSession.isAuthenticated() || clientSession.getUserId() == null) {
 				continue;
 			}
-
-			if (clientSession.getSubscribedStockIds().isEmpty()) {
-				continue;
-			}
-
-			if (clientSession.hasPendingDataTasks() || clientSession.getQueuedTaskCount() > 0) {
-				webSocketMetrics.maintenanceSkipped("renew", "backlog");
-				continue;
-			}
-
-			boolean accepted = clientSession.enqueueSessionTask(() -> renewSingleSession(clientSession));
-			if (!accepted) {
-				webSocketMetrics.sessionQueueOverflow("watch_renew_drop");
+			UUID userId = clientSession.getUserId();
+			for (Long stockId : clientSession.getSubscribedStockIds()) {
+				watchersByStock.computeIfAbsent(stockId, k -> new HashSet<>()).add(userId);
 			}
 		}
-	}
 
-	private void renewSingleSession(ClientSession clientSession) {
-		if (!clientSession.isAuthenticated() || clientSession.getUserId() == null) {
+		if (watchersByStock.isEmpty()) {
 			return;
 		}
 
-		for (Long stockId : clientSession.getSubscribedStockIds()) {
-			currentWatcherRedisRepository.renew(clientSession.getUserId(), stockId);
-		}
+		currentWatcherRedisRepository.batchRenew(watchersByStock);
 	}
 }
