@@ -1,9 +1,6 @@
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre-jammy
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/logs
 
