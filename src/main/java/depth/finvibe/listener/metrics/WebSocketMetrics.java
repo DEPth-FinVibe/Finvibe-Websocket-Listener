@@ -13,6 +13,31 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class WebSocketMetrics {
+	private static final Duration LATENCY_MIN_EXPECTED = Duration.ofMillis(1);
+	private static final Duration LATENCY_MAX_EXPECTED = Duration.ofMinutes(10);
+	private static final Duration[] LATENCY_SLOS = new Duration[]{
+			Duration.ofMillis(1),
+			Duration.ofMillis(5),
+			Duration.ofMillis(10),
+			Duration.ofMillis(25),
+			Duration.ofMillis(50),
+			Duration.ofMillis(100),
+			Duration.ofMillis(250),
+			Duration.ofMillis(500),
+			Duration.ofSeconds(1),
+			Duration.ofSeconds(2),
+			Duration.ofSeconds(5),
+			Duration.ofSeconds(10),
+			Duration.ofSeconds(15),
+			Duration.ofSeconds(30),
+			Duration.ofSeconds(45),
+			Duration.ofSeconds(60),
+			Duration.ofSeconds(90),
+			Duration.ofSeconds(120),
+			Duration.ofSeconds(180),
+			Duration.ofSeconds(300),
+			Duration.ofSeconds(600)
+	};
 
 	private final MeterRegistry meterRegistry;
 	private final Map<String, Timer> timers = new ConcurrentHashMap<>();
@@ -273,6 +298,9 @@ public class WebSocketMetrics {
 	private Timer timer(String metricName) {
 		return timers.computeIfAbsent(metricName, key -> Timer.builder(key)
 				.description("WebSocket event latency in listener pipeline")
+				.minimumExpectedValue(LATENCY_MIN_EXPECTED)
+				.maximumExpectedValue(LATENCY_MAX_EXPECTED)
+				.serviceLevelObjectives(LATENCY_SLOS)
 				.publishPercentileHistogram()
 				.register(meterRegistry));
 	}
@@ -282,6 +310,9 @@ public class WebSocketMetrics {
 		return timers.computeIfAbsent(cacheKey, key -> Timer.builder(metricName)
 				.description("WebSocket stage latency in listener pipeline")
 				.tag("stage", stage)
+				.minimumExpectedValue(LATENCY_MIN_EXPECTED)
+				.maximumExpectedValue(LATENCY_MAX_EXPECTED)
+				.serviceLevelObjectives(LATENCY_SLOS)
 				.publishPercentileHistogram()
 				.register(meterRegistry));
 	}
