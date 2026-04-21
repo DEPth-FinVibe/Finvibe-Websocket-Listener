@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "listener.redis.topic")
 public record RedisTopicsProperties(
-		String currentPriceUpdated
+		String currentPriceUpdated,
+		int currentPriceUpdatedPartitionCount
 ) {
 }

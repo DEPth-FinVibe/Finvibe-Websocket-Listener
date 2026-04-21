@@ -43,3 +43,4 @@ listener:
   redis:
     topic:
       current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}
+      current-price-updated-partition-count: ${WS_PRICE_TOPIC_PARTITION_COUNT:1}
