@@ -37,6 +37,7 @@ services:
       WS_MAX_MISSED_PONGS: ${WS_MAX_MISSED_PONGS}
       WS_RENEW_INTERVAL_MS: ${WS_RENEW_INTERVAL_MS}
       WS_PRICE_TOPIC: ${WS_PRICE_TOPIC}
+      WS_PRICE_TOPIC_PARTITION_COUNT: ${WS_PRICE_TOPIC_PARTITION_COUNT}
     labels:
       prometheus.scrape: "true"
       prometheus.job: finvibe-websocket-listener

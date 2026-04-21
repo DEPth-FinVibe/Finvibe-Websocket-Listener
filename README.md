@@ -58,6 +58,7 @@
 - `WS_MAX_MISSED_PONGS` (기본: `2`)
 - `WS_RENEW_INTERVAL_MS` (기본: `60000`)
 - `WS_PRICE_TOPIC` (기본: `market:price-updated`)
+- `WS_PRICE_TOPIC_PARTITION_COUNT` (기본: `1`, `market:price-updated:{partition}` 채널 수)
 
 ## 배포 토폴로지 (Compose + Nginx)
 
