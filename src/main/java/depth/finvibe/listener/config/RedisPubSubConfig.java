@@ -2,6 +2,7 @@ package depth.finvibe.listener.config;
 
 import depth.finvibe.listener.redis.PriceEventRedisSubscriber;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -18,6 +19,7 @@ public class RedisPubSubConfig {
 	private final RedisTopicsProperties redisTopicsProperties;
 
 	@Bean
+	@ConditionalOnProperty(prefix = "listener.redis.topic", name = "mode", havingValue = "classic", matchIfMissing = true)
 	public RedisMessageListenerContainer redisMessageListenerContainer(
 			RedisConnectionFactory connectionFactory,
 			PriceEventRedisSubscriber priceEventRedisSubscriber
@@ -33,18 +35,9 @@ public class RedisPubSubConfig {
 
 	private List<ChannelTopic> currentPriceUpdatedTopics() {
 		List<ChannelTopic> topics = new ArrayList<>();
-		String baseTopic = redisTopicsProperties.currentPriceUpdated();
-		topics.add(ChannelTopic.of(baseTopic));
-
-		int partitionCount = redisTopicsProperties.currentPriceUpdatedPartitionCount();
-		if (partitionCount <= 1) {
-			return topics;
+		for (String topic : redisTopicsProperties.currentPriceUpdatedTopics()) {
+			topics.add(ChannelTopic.of(topic));
 		}
-
-		for (int partition = 0; partition < partitionCount; partition++) {
-			topics.add(ChannelTopic.of(baseTopic + ":" + partition));
-		}
-
 		return topics;
 	}
 }

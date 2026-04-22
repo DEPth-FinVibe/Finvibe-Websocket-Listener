@@ -38,6 +38,10 @@ public class PriceEventRedisSubscriber implements MessageListener {
 	@Override
 	public void onMessage(Message message, byte[] pattern) {
 		String payload = new String(message.getBody(), StandardCharsets.UTF_8);
+		handle(payload);
+	}
+
+	public void handle(String payload) {
 		virtualTaskExecutor.execute(() -> processMessage(payload));
 	}
 
