@@ -37,25 +37,38 @@ public class PriceEventRedisSubscriber implements MessageListener {
 
 	@Override
 	public void onMessage(Message message, byte[] pattern) {
+		long arrivedAt = System.currentTimeMillis();
 		String payload = new String(message.getBody(), StandardCharsets.UTF_8);
-		handle(payload);
+		handle(payload, arrivedAt);
 	}
 
 	public void handle(String payload) {
-		virtualTaskExecutor.execute(() -> processMessage(payload));
+		handle(payload, System.currentTimeMillis());
 	}
 
-	private void processMessage(String payload) {
+	public void handle(String payload, long arrivedAt) {
+		virtualTaskExecutor.execute(() -> processMessage(payload, arrivedAt));
+	}
+
+	private void processMessage(String payload, long arrivedAt) {
 		try {
 			JsonNode event = objectMapper.readTree(payload);
 			long consumedAt = System.currentTimeMillis();
 			Long sourceTs = longOrNull(event.path("ts"));
-			if (sourceTs != null && event instanceof tools.jackson.databind.node.ObjectNode objectNode) {
-				objectNode.put("consumedAt", consumedAt);
+			Long publishedAt = longOrNull(event.path("publishedAt"));
+			if (event instanceof tools.jackson.databind.node.ObjectNode objectNode) {
+				if (sourceTs != null) {
+					objectNode.put("consumedAt", consumedAt);
+				}
+				objectNode.put("arrivedAt", arrivedAt);
 			}
 			webSocketMetrics.redisEventConsumed();
 			if (sourceTs != null) {
 				webSocketMetrics.redisEventSourceToConsumeLatency(consumedAt - sourceTs);
+			}
+			if (publishedAt != null) {
+				webSocketMetrics.redisEventPublishToArrivalLatency(arrivedAt - publishedAt);
+				webSocketMetrics.redisEventArrivalToConsumeLatency(consumedAt - arrivedAt);
 			}
 			marketEventIngressDispatcher.submit(event);
 		} catch (Exception ex) {

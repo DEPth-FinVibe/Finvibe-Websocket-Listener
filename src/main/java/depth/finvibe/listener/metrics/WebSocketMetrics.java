@@ -139,6 +139,14 @@ public class WebSocketMetrics {
 		recordLatency("finvibe_ws_event_source_to_consume_latency", latencyMs);
 	}
 
+	public void redisEventPublishToArrivalLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_publish_to_arrival_latency", latencyMs);
+	}
+
+	public void redisEventArrivalToConsumeLatency(long latencyMs) {
+		recordLatency("finvibe_ws_event_arrival_to_consume_latency", latencyMs);
+	}
+
 	public void redisEventFailed() {
 		meterRegistry.counter("finvibe_ws_redis_events_failed_total").increment();
 	}
