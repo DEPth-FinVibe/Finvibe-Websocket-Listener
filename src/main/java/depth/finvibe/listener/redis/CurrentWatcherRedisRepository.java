@@ -90,7 +90,7 @@ public class CurrentWatcherRedisRepository {
 		}
 	}
 
-	private String keyForStock(Long stockId) {
-		return KEY_PREFIX + stockId;
+ 	private String keyForStock(Long stockId) {
+		return KEY_PREFIX + "{stock:" + stockId + "}";
 	}
 }
