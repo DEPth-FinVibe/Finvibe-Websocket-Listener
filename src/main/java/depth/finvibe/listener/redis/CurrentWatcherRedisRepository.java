@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
@@ -22,7 +21,7 @@ public class CurrentWatcherRedisRepository {
 	private final StringRedisTemplate redisTemplate;
 	private final WebSocketMetrics webSocketMetrics;
 
-	public void save(UUID userId, Long stockId) {
+	public void save(Long userId, Long stockId) {
 		try {
 			String key = keyForStock(stockId);
 			redisTemplate.opsForSet().add(key, userId.toString());
@@ -34,7 +33,7 @@ public class CurrentWatcherRedisRepository {
 		}
 	}
 
-	public void renew(UUID userId, Long stockId) {
+	public void renew(Long userId, Long stockId) {
 		try {
 			String key = keyForStock(stockId);
 			if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
@@ -50,7 +49,7 @@ public class CurrentWatcherRedisRepository {
 		}
 	}
 
-	public void remove(UUID userId, Long stockId) {
+	public void remove(Long userId, Long stockId) {
 		try {
 			String key = keyForStock(stockId);
 			redisTemplate.opsForSet().remove(key, userId.toString());
@@ -65,16 +64,16 @@ public class CurrentWatcherRedisRepository {
 		}
 	}
 
-	public void batchRenew(Map<Long, Set<UUID>> watchersByStock) {
+	public void batchRenew(Map<Long, Set<Long>> watchersByStock) {
 		if (watchersByStock.isEmpty()) {
 			return;
 		}
 		try {
 			redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
-				for (Map.Entry<Long, Set<UUID>> entry : watchersByStock.entrySet()) {
+				for (Map.Entry<Long, Set<Long>> entry : watchersByStock.entrySet()) {
 					byte[] key = keyForStock(entry.getKey()).getBytes(StandardCharsets.UTF_8);
 					byte[][] members = entry.getValue().stream()
-							.map(uuid -> uuid.toString().getBytes(StandardCharsets.UTF_8))
+							.map(userId -> userId.toString().getBytes(StandardCharsets.UTF_8))
 							.toArray(byte[][]::new);
 					if (members.length > 0) {
 						connection.setCommands().sAdd(key, members);

@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
@@ -62,7 +61,7 @@ public class SessionRegistry {
 		return sessions.get(sessionId);
 	}
 
-	public boolean authenticate(String sessionId, UUID userId) {
+	public boolean authenticate(String sessionId, Long userId) {
 		ClientSession session = sessions.get(sessionId);
 		if (session == null) {
 			return false;
@@ -170,7 +169,7 @@ public class SessionRegistry {
 		}
 	}
 
-	public record RemovedSession(UUID userId, Set<Long> subscribedStockIds) {
+	public record RemovedSession(Long userId, Set<Long> subscribedStockIds) {
 		static RemovedSession empty() {
 			return new RemovedSession(null, Set.of());
 		}

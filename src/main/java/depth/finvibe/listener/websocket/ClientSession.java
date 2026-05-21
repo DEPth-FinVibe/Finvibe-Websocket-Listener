@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -24,7 +23,7 @@ public class ClientSession {
 	private final ConcurrentLinkedQueue<String> pendingDataTopics = new ConcurrentLinkedQueue<>();
 	private final AtomicBoolean queueDraining = new AtomicBoolean(false);
 	private volatile boolean queueClosed;
-	private volatile UUID userId;
+	private volatile Long userId;
 	private volatile boolean authenticated;
 	private volatile long lastPongAtEpochMs;
 	private volatile long lastPingAtEpochMs;
@@ -56,7 +55,7 @@ public class ClientSession {
 		return connectedAtEpochMs;
 	}
 
-	public UUID getUserId() {
+	public Long getUserId() {
 		return userId;
 	}
 
@@ -84,7 +83,7 @@ public class ClientSession {
 		return missedPongCount;
 	}
 
-	public void authenticate(UUID userId) {
+	public void authenticate(Long userId) {
 		this.userId = userId;
 		this.authenticated = true;
 	}

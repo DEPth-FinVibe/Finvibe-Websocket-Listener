@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 
 @Component
 public class JwtTokenVerifier {
@@ -27,13 +26,13 @@ public class JwtTokenVerifier {
 		key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
 	}
 
-	public UUID verifyAndGetUserId(String token) {
+	public Long verifyAndGetUserId(String token) {
 		Claims claims = Jwts.parser()
 				.verifyWith(key)
 				.requireIssuer(issuer)
 				.build()
 				.parseSignedClaims(token)
 				.getPayload();
-		return UUID.fromString(claims.getSubject());
+		return Long.valueOf(claims.getSubject());
 	}
 }

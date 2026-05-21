@@ -18,7 +18,6 @@ import tools.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.Executor;
 
 @Component
@@ -101,7 +100,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			return;
 		}
 
-		UUID userId;
+		Long userId;
 		try {
 			userId = jwtTokenVerifier.verifyAndGetUserId(token);
 		} catch (Exception ex) {
@@ -154,7 +153,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		sendJson(webSocketSession, subscribeAck);
 
 		if (!toSaveInWatcher.isEmpty()) {
-			UUID userId = clientSession.getUserId();
+			Long userId = clientSession.getUserId();
 			virtualTaskExecutor.execute(() -> {
 				for (Long stockId : toSaveInWatcher) {
 					try {
@@ -197,7 +196,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		sendJson(webSocketSession, unsubscribeAck);
 
 		if (!toRemoveFromWatcher.isEmpty()) {
-			UUID userId = clientSession.getUserId();
+			Long userId = clientSession.getUserId();
 			virtualTaskExecutor.execute(() -> {
 				for (Long stockId : toRemoveFromWatcher) {
 					try {
@@ -268,7 +267,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		}
 		webSocketMetrics.subscriptionsRemoved(removedSession.subscribedStockIds().size());
 
-		UUID userId = removedSession.userId();
+		Long userId = removedSession.userId();
 		Set<Long> stockIds = Set.copyOf(removedSession.subscribedStockIds());
 		virtualTaskExecutor.execute(() -> {
 			for (Long stockId : stockIds) {

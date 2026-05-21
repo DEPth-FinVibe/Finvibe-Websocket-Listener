@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 @Component
 public class WatchRenewScheduler {
@@ -26,13 +25,13 @@ public class WatchRenewScheduler {
 
 	@Scheduled(fixedDelayString = "${listener.websocket.renew-interval-ms:60000}")
 	public void renewSubscriptions() {
-		Map<Long, Set<UUID>> watchersByStock = new HashMap<>();
+		Map<Long, Set<Long>> watchersByStock = new HashMap<>();
 
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
 			if (!clientSession.isAuthenticated() || clientSession.getUserId() == null) {
 				continue;
 			}
-			UUID userId = clientSession.getUserId();
+			Long userId = clientSession.getUserId();
 			for (Long stockId : clientSession.getSubscribedStockIds()) {
 				watchersByStock.computeIfAbsent(stockId, k -> new HashSet<>()).add(userId);
 			}
