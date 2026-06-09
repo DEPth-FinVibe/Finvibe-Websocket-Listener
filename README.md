@@ -1,89 +1,66 @@
 # Finvibe WebSocket Listener
 
-브라우저 대상 WebSocket(`/market/ws`) 트래픽을 모놀리스에서 분리하기 위한 리스너 서비스입니다.
+Monolith가 발행한 가격 이벤트를 Redis Pub/Sub으로 수신하여 브라우저 WebSocket 세션에 실시간 전달하는 서비스입니다.
 
-## 역할
+---
 
-- 브라우저와 WebSocket 연결/인증/JWT 검증 처리
-- 구독/해제/유지(renew) 상태를 Redis watcher 인덱스에 직접 반영
-- Monolith가 발행한 가격 이벤트를 Redis Pub/Sub로 수신 후 브라우저로 전파
+## 병목 추적 로드맵 — 종단간 latency 34,000ms → 240ms
 
-## Redis 채널
+하나의 병목을 해결하면 다음 병목이 드러나는 방식으로 단계적으로 개선했습니다.
 
-- `market:price-updated`: Monolith -> Listener
-- `market:current-watcher:{stockId}`: Listener -> Redis key 관리
+### Step 1. WebSocket 연결 자원 최적화 — 1,000 OOM → 10,000 연결
+
+- **문제**: 1,000 연결에서 JVM 힙 3GB 초과 OOM (목표: DAU 1만 기준 10,000 연결)
+- **원인**: 연결마다 heartbeat·auth timeout·pong 용 `ScheduledFuture` 생성 → 스케줄러 큐에 O(N) 태스크 상주
+- **해결**:
+  - Per-connection 스케줄 태스크 → 단일 sweep 루프 통합 (O(N) → O(1))
+  - 구독 인덱스 `Map<String, Set<String>>` → `Map<Long, Set<String>>` 정규화
+  - 세션당 메시지 버퍼 512KB → 64KB 축소
+- **→ 다음 병목**: 연결은 충분해졌지만, fanout 성능 측정이 가능해지면서 전송 지연이 드러남
+
+### Step 2. Virtual Thread 기반 Fanout — p99 21,000ms → 650ms
+
+- **문제**: 5,000 연결 + 유저당 20종목에서 fanout p99 21초
+- **원인**: 고정 스레드풀 4개가 5,000 세션에 순차 전송. `sendMessage()`가 blocking I/O
+- **해결**: Virtual Thread 도입. 단, Spring WebSocket `sendMessage()` 내부 `synchronized`에서 JDK 21 VT가 carrier thread에 pinning → JDK 25(JEP 491) 적용
+- **→ 다음 병목**: fanout은 해결됐지만 종단간 latency가 여전히 3,400ms — Redis 구간이 병목
+
+### Step 3. Redis Cluster Sharded Pub/Sub — Ping p95 700ms → 25ms
+
+- **문제**: 현재가 캐싱 1초당 450,000건 + Pub/Sub이 단일 Redis에 집중. Ping p95 700ms
+- **해결**: 일반 PUBLISH는 전체 노드 브로드캐스트 → **Sharded Pub/Sub** 채택 (채널이 해시 슬롯에 바인딩, 해당 노드에서만 처리)
+- **at-most-once 보완**: 현재가를 Redis key에 별도 저장 → 재연결 시 catch-up하는 이중 구조
+- **결과**: 종단간 p95 3,400ms → **240ms**
+
+### Step 3-1. 재연결 폭풍 대응 — 파이프라인 불일치 발견
+
+- **발견**: 롤링 업데이트 시나리오 점검 중 같은 코드베이스에서 `batchRenew()`는 파이프라인, `save()`/`remove()`는 개별 실행하는 불일치 확인
+- **영향**: 유저 2,500명 × 종목 20개 = ~135,000건 개별 Redis 왕복이 수 초 안에 집중
+- **해결**: 전 경로에 파이프라인 적용. 유저당 왕복 40~60회 → **1~2회** (97.5% 감소)
+
+### Step 3-2. 측정 왜곡 검증 — 잘못된 전제 방지
+
+- **상황**: 스케일 2배(10,000 WS + 1,000종목) 테스트에서 publish→consume p99가 1.2초. Redis ops 수준에 비해 설명 안 됨
+- **검증**: 타임스탬프를 세 지점(publishedAt, arrivedAt, consumedAt)으로 분리
+- **결과**: 1.2초 대부분이 테스트 publisher의 tick 시각 재사용에서 온 **측정 왜곡**. 이 검증 없이는 Redis가 느리다는 잘못된 전제로 불필요한 최적화를 진행했을 것
+
+### 최종 결과
+
+| 지표 | Before | After |
+|---|---|---|
+| 동시 연결 | 1,000 OOM | **10,000 유지** |
+| Fanout p99 | 21,000ms | **650ms** |
+| Redis Ping p95 | 700ms | **25ms** |
+| **종단간 전달 p95** | **34,000ms** | **240ms** |
+
+---
 
 ## 실행
 
 ```bash
-./gradlew bootRun
+./gradlew bootRun   # 포트 8080, WebSocket 경로: /market/ws
 ```
 
-기본 포트는 `8080`이며, WebSocket 경로는 `/market/ws` 입니다.
+## 배포
 
-## GitHub Actions 배포 설정
-
-`CI` 워크플로우(`.github/workflows/ci.yml`)를 사용하려면 아래 값을 설정해야 합니다.
-
-### GitHub Secrets (필수)
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-- `SSH_HOST`
-- `SSH_USER`
-- `SSH_PORT`
-- `SSH_PRIVATE_KEY`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `REDIS_PASSWORD` (비밀번호 미사용이면 빈 문자열 가능)
-- `JWT_SECRET`
-- `JWT_ISSUER`
-
-### GitHub Variables (선택)
-
-- `LISTENER_IMAGE_NAME` (기본: `<dockerhub-user>/finvibe-websocket-listener`)
-- `LISTENER_CONTAINER_NAME` (기본: `finvibe-websocket-listener`, 기존 단일 컨테이너 정리용)
-- `LISTENER_LOG_DIR_HOST` (기본: `/var/log/finvibe-websocket-listener`)
-- `PRIMARY_DOCKER_NETWORK` (기본: `infra_bridge`)
-- `SECONDARY_DOCKER_NETWORK` (기본: `monitoring_net`)
-- `LISTENER_INTERNAL_LB_PORT` (기본: `18090`, Caddy가 붙는 내부 LB 포트)
-- `INTERNAL_LB_NETWORK` (기본: `finvibe_ws_lb`, Nginx-Listener 내부 라우팅 네트워크)
-- `LISTENER_REPLICAS` (기본: `2`)
-- `LISTENER_JAVA_TOOL_OPTIONS` (기본: `-Xms512m -Xmx2g -XX:+UseG1GC`)
-- `LISTENER_MEMORY_LIMIT` (기본: `2560m`, JVM heap 외 native/metaspace 여유 포함)
-- `WS_ALLOWED_ORIGINS` (기본: `*`)
-- `WS_AUTH_TIMEOUT_MS` (기본: `10000`)
-- `WS_HEARTBEAT_INTERVAL_MS` (기본: `15000`)
-- `WS_PONG_TIMEOUT_MS` (기본: `15000`)
-- `WS_MAX_MISSED_PONGS` (기본: `2`)
-- `WS_RENEW_INTERVAL_MS` (기본: `60000`)
-- `WS_PRICE_TOPIC` (기본: `market:price-updated`)
-- `WS_PRICE_TOPIC_PARTITION_COUNT` (기본: `1`, `market:price-updated:{partition}` 채널 수)
-
-## 배포 토폴로지 (Compose + Nginx)
-
-- 외부 진입점: Caddy (`80/443`)
-- 내부 LB: Nginx (`LISTENER_INTERNAL_LB_PORT`, 기본 `18090`)
-- 앱: Listener 인스턴스 N개 (`LISTENER_REPLICAS`)
-
-Nginx는 Compose 내부 `lb` 네트워크에만 붙고, Listener가 `lb` 네트워크로 Nginx와 통신합니다.
-`PRIMARY_DOCKER_NETWORK`/`SECONDARY_DOCKER_NETWORK`는 Listener가 외부 인프라(예: Redis, Prometheus)와 통신할 때 사용합니다.
-
-`/market/ws` 는 Caddy -> Nginx -> Listener(여러 인스턴스) 순서로 전달됩니다.
-
-예시 Caddy 설정:
-
-```caddy
-your-domain.example.com {
-    reverse_proxy /market/ws* 127.0.0.1:18090
-}
-```
-
-배포 워크플로우는 `deploy/docker-compose.yml` 을 서버로 복사한 뒤 `docker compose up -d --scale listener=N` 으로 적용합니다.
-
-배포 성공 판단 기준:
-
-- Nginx 컨테이너가 running 상태
-- Listener 컨테이너 수가 `LISTENER_REPLICAS` 와 일치
-- 모든 Listener의 Docker healthcheck가 `healthy`
-- Nginx 경유 `http://localhost:${LISTENER_INTERNAL_LB_PORT}/actuator/health` 응답은 추가 검증(실패해도 Listener가 healthy면 배포는 성공 처리)
+Caddy(80/443) → Nginx(내부 LB) → Listener N개 (`docker compose up -d --scale listener=N`)
