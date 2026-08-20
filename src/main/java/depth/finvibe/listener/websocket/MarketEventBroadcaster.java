@@ -120,7 +120,7 @@ public class MarketEventBroadcaster {
 		for (int index = start; index < end; index++) {
 			ClientSession clientSession = subscribers.get(index);
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
-			if (!webSocketSession.isOpen() || !clientSession.isAuthenticated()) {
+			if (!webSocketSession.isOpen() || !clientSession.isEstablished()) {
 				continue;
 			}
 			long enqueueStartedAt = System.currentTimeMillis();

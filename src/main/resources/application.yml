@@ -30,6 +30,8 @@ listener:
     pong-timeout-ms: ${WS_PONG_TIMEOUT_MS:45000}
     max-missed-pongs: ${WS_MAX_MISSED_PONGS:4}
     renew-interval-ms: ${WS_RENEW_INTERVAL_MS:120000}
+    reconnect-jitter-min-ms: ${WS_RECONNECT_JITTER_MIN_MS:0}
+    reconnect-jitter-max-ms: ${WS_RECONNECT_JITTER_MAX_MS:5000}
     slow-consumer-grace-ms: ${WS_SLOW_CONSUMER_GRACE_MS:10000}
     event-dispatch-parallelism: ${WS_EVENT_DISPATCH_PARALLELISM:4}
     event-dispatch-queue-capacity: ${WS_EVENT_DISPATCH_QUEUE_CAPACITY:512}
@@ -40,6 +42,7 @@ listener:
     send-buffer-size-bytes: ${WS_SEND_BUFFER_SIZE_BYTES:262144}
     send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:DROP}
     session-queue-capacity: ${WS_SESSION_QUEUE_CAPACITY:2048}
+    anonymous-subscribe-enabled: ${WS_ANONYMOUS_SUBSCRIBE_ENABLED:true}
   redis:
     topic:
       current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}

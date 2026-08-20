@@ -38,7 +38,8 @@ public class WebSocketSweepScheduler {
 		long now = System.currentTimeMillis();
 
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
-			if (!clientSession.isAuthenticated()) {
+			// 익명 구독이 허용되면 세션은 연결 즉시 established 이므로 auth timeout 대상이 아니다.
+			if (!clientSession.isEstablished()) {
 				if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
 					safeClose(
 							clientSession.getWebSocketSession(),
@@ -78,7 +79,7 @@ public class WebSocketSweepScheduler {
 			return;
 		}
 
-		if (!clientSession.isAuthenticated()) {
+		if (!clientSession.isEstablished()) {
 			if (now - clientSession.getConnectedAtEpochMs() > webSocketProperties.authTimeoutMs()) {
 				safeClose(webSocketSession, CloseStatus.POLICY_VIOLATION.withReason("auth_timeout"), "sweep_auth_timeout");
 			}

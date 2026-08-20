@@ -30,7 +30,8 @@ public class SessionRegistry {
 				wrapForConcurrentSend(webSocketSession),
 				nowEpochMs,
 				virtualTaskExecutor,
-				webSocketProperties.sessionQueueCapacity()
+				webSocketProperties.sessionQueueCapacity(),
+				webSocketProperties.isAnonymousSubscribeEnabled()
 		);
 		sessions.put(webSocketSession.getId(), clientSession);
 		return clientSession;
@@ -54,7 +55,7 @@ public class SessionRegistry {
 			}
 		}
 
-		return new RemovedSession(clientSession.getUserId(), clientSession.getSubscribedStockIds());
+		return new RemovedSession(clientSession.getWatcherId(), clientSession.getSubscribedStockIds());
 	}
 
 	public ClientSession get(String sessionId) {
@@ -132,6 +133,16 @@ public class SessionRegistry {
 		return sessions.size();
 	}
 
+	public int getGuestSessionCount() {
+		int count = 0;
+		for (ClientSession session : sessions.values()) {
+			if (session.isGuest()) {
+				count += 1;
+			}
+		}
+		return count;
+	}
+
 	public int getSubscribedStockCount() {
 		return stockSubscribers.size();
 	}
@@ -169,7 +180,7 @@ public class SessionRegistry {
 		}
 	}
 
-	public record RemovedSession(Long userId, Set<Long> subscribedStockIds) {
+	public record RemovedSession(String watcherId, Set<Long> subscribedStockIds) {
 		static RemovedSession empty() {
 			return new RemovedSession(null, Set.of());
 		}

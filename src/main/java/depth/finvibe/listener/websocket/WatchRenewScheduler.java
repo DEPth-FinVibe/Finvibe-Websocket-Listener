@@ -25,15 +25,16 @@ public class WatchRenewScheduler {
 
 	@Scheduled(fixedDelayString = "${listener.websocket.renew-interval-ms:60000}")
 	public void renewSubscriptions() {
-		Map<Long, Set<Long>> watchersByStock = new HashMap<>();
+		Map<Long, Set<String>> watchersByStock = new HashMap<>();
 
 		for (ClientSession clientSession : sessionRegistry.getAllSessions()) {
-			if (!clientSession.isAuthenticated() || clientSession.getUserId() == null) {
+			// 익명 세션도 구독 중이면 watcher index를 유지해야 시세가 계속 발행된다.
+			if (!clientSession.isEstablished()) {
 				continue;
 			}
-			Long userId = clientSession.getUserId();
+			String watcherId = clientSession.getWatcherId();
 			for (Long stockId : clientSession.getSubscribedStockIds()) {
-				watchersByStock.computeIfAbsent(stockId, k -> new HashSet<>()).add(userId);
+				watchersByStock.computeIfAbsent(stockId, k -> new HashSet<>()).add(watcherId);
 			}
 		}
 

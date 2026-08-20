@@ -3,6 +3,7 @@ package depth.finvibe.listener.websocket;
 import depth.finvibe.listener.metrics.WebSocketMetrics;
 import depth.finvibe.listener.redis.CurrentWatcherRedisRepository;
 import depth.finvibe.listener.security.JwtTokenVerifier;
+import depth.finvibe.listener.config.WebSocketProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Component
 public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
@@ -30,6 +32,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
 	private final Executor virtualTaskExecutor;
+	private final WebSocketProperties webSocketProperties;
 
 	public MarketQuoteWebSocketHandler(
 			SessionRegistry sessionRegistry,
@@ -37,6 +40,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			CurrentWatcherRedisRepository currentWatcherRedisRepository,
 			WebSocketMetrics webSocketMetrics,
 			ObjectMapper objectMapper,
+			WebSocketProperties webSocketProperties,
 			@org.springframework.beans.factory.annotation.Qualifier("listenerVirtualTaskExecutor") Executor virtualTaskExecutor
 	) {
 		this.sessionRegistry = sessionRegistry;
@@ -45,6 +49,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		this.webSocketMetrics = webSocketMetrics;
 		this.objectMapper = objectMapper;
 		this.virtualTaskExecutor = virtualTaskExecutor;
+		this.webSocketProperties = webSocketProperties;
 	}
 
 	@Override
@@ -109,6 +114,10 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			return;
 		}
 
+		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
+		String previousWatcherId = clientSession == null ? null : clientSession.getWatcherId();
+		Set<Long> subscribedStockIds = clientSession == null ? Set.of() : clientSession.getSubscribedStockIds();
+
 		if (!sessionRegistry.authenticate(webSocketSession.getId(), userId)) {
 			webSocketMetrics.authFailure("session_not_found");
 			sendErrorAndClose(webSocketSession, "UNAUTHORIZED", "Session not found.");
@@ -116,19 +125,44 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		}
 		webSocketMetrics.authSuccess();
 
+		// 익명으로 먼저 구독한 세션이 로그인하면 watcher index를 userId 기준으로 옮긴다.
+		migrateWatcherOwnership(previousWatcherId, userId.toString(), subscribedStockIds);
+
 		ObjectNode authAck = objectMapper.createObjectNode();
 		authAck.put("type", "auth");
 		authAck.put("ok", true);
 		authAck.put("ts", System.currentTimeMillis());
+		putReconnectJitterHint(authAck);
 		sendJson(webSocketSession, authAck);
+	}
+
+	private void migrateWatcherOwnership(String previousWatcherId, String nextWatcherId, Set<Long> stockIds) {
+		if (previousWatcherId == null || previousWatcherId.equals(nextWatcherId) || stockIds.isEmpty()) {
+			return;
+		}
+
+		Set<Long> targets = Set.copyOf(stockIds);
+		virtualTaskExecutor.execute(() -> {
+			for (Long stockId : targets) {
+				try {
+					currentWatcherRedisRepository.save(nextWatcherId, stockId);
+					currentWatcherRedisRepository.remove(previousWatcherId, stockId);
+				} catch (Exception ex) {
+					log.debug("Async watcher migration failed. stockId={}", stockId, ex);
+				}
+			}
+		});
 	}
 
 	private void handleSubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
 		webSocketMetrics.subscribeRequest();
 		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
-		if (clientSession == null || !clientSession.isAuthenticated()) {
+		if (clientSession == null || !clientSession.isEstablished()) {
 			sendError(webSocketSession, "UNAUTHORIZED", "Auth is required before subscribe.");
 			return;
+		}
+		if (clientSession.isGuest()) {
+			webSocketMetrics.guestSubscribeRequest();
 		}
 
 		List<String> subscribed = new ArrayList<>();
@@ -153,11 +187,11 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		sendJson(webSocketSession, subscribeAck);
 
 		if (!toSaveInWatcher.isEmpty()) {
-			Long userId = clientSession.getUserId();
+			String watcherId = clientSession.getWatcherId();
 			virtualTaskExecutor.execute(() -> {
 				for (Long stockId : toSaveInWatcher) {
 					try {
-						currentWatcherRedisRepository.save(userId, stockId);
+						currentWatcherRedisRepository.save(watcherId, stockId);
 					} catch (Exception ex) {
 						log.debug("Async watcher save failed. stockId={}", stockId, ex);
 					}
@@ -169,7 +203,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private void handleUnsubscribe(WebSocketSession webSocketSession, JsonNode payload) throws Exception {
 		webSocketMetrics.unsubscribeRequest();
 		ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
-		if (clientSession == null || !clientSession.isAuthenticated()) {
+		if (clientSession == null || !clientSession.isEstablished()) {
 			sendError(webSocketSession, "UNAUTHORIZED", "Auth is required before unsubscribe.");
 			return;
 		}
@@ -196,11 +230,11 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		sendJson(webSocketSession, unsubscribeAck);
 
 		if (!toRemoveFromWatcher.isEmpty()) {
-			Long userId = clientSession.getUserId();
+			String watcherId = clientSession.getWatcherId();
 			virtualTaskExecutor.execute(() -> {
 				for (Long stockId : toRemoveFromWatcher) {
 					try {
-						currentWatcherRedisRepository.remove(userId, stockId);
+						currentWatcherRedisRepository.remove(watcherId, stockId);
 					} catch (Exception ex) {
 						log.debug("Async watcher remove failed. stockId={}", stockId, ex);
 					}
@@ -260,19 +294,37 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		safeClose(resolveManagedSession(session), CloseStatus.POLICY_VIOLATION.withReason("auth_error"), "handler_auth_error");
 	}
 
+	private void putReconnectJitterHint(ObjectNode payload) {
+		long minMs = Math.max(0L, webSocketProperties.reconnectJitterMinMs());
+		long maxMs = Math.max(minMs, webSocketProperties.reconnectJitterMaxMs());
+		payload.put("reconnect_jitter_min_ms", minMs);
+		payload.put("reconnect_jitter_max_ms", maxMs);
+		payload.put("reconnect_jitter_ms", randomBetweenInclusive(minMs, maxMs));
+	}
+
+	private long randomBetweenInclusive(long minMs, long maxMs) {
+		if (maxMs <= minMs) {
+			return minMs;
+		}
+		if (maxMs == Long.MAX_VALUE) {
+			return ThreadLocalRandom.current().nextLong(minMs, maxMs);
+		}
+		return ThreadLocalRandom.current().nextLong(minMs, maxMs + 1);
+	}
+
 	private void removeAndPublishUnregister(String sessionId) {
 		SessionRegistry.RemovedSession removedSession = sessionRegistry.remove(sessionId);
-		if (removedSession.userId() == null || removedSession.subscribedStockIds().isEmpty()) {
+		if (removedSession.watcherId() == null || removedSession.subscribedStockIds().isEmpty()) {
 			return;
 		}
 		webSocketMetrics.subscriptionsRemoved(removedSession.subscribedStockIds().size());
 
-		Long userId = removedSession.userId();
+		String watcherId = removedSession.watcherId();
 		Set<Long> stockIds = Set.copyOf(removedSession.subscribedStockIds());
 		virtualTaskExecutor.execute(() -> {
 			for (Long stockId : stockIds) {
 				try {
-					currentWatcherRedisRepository.remove(userId, stockId);
+					currentWatcherRedisRepository.remove(watcherId, stockId);
 				} catch (Exception ex) {
 					log.debug("Async watcher remove on disconnect failed. stockId={}", stockId, ex);
 				}

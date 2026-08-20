@@ -50,6 +50,10 @@ public class WebSocketMetrics {
 				.description("Active websocket connections on this instance")
 				.register(meterRegistry);
 
+		Gauge.builder("finvibe_ws_guest_connections", sessionRegistry, SessionRegistry::getGuestSessionCount)
+				.description("Active anonymous(non-authenticated) websocket connections on this instance")
+				.register(meterRegistry);
+
 		Gauge.builder("finvibe_ws_subscribed_stocks", sessionRegistry, SessionRegistry::getSubscribedStockCount)
 				.description("Unique subscribed stock ids on this instance")
 				.register(meterRegistry);
@@ -102,6 +106,10 @@ public class WebSocketMetrics {
 
 	public void subscribeRequest() {
 		meterRegistry.counter("finvibe_ws_subscribe_requests_total").increment();
+	}
+
+	public void guestSubscribeRequest() {
+		meterRegistry.counter("finvibe_ws_guest_subscribe_requests_total").increment();
 	}
 
 	public void unsubscribeRequest() {
