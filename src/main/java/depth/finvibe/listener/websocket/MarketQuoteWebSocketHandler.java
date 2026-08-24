@@ -1,6 +1,7 @@
 package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
+import depth.finvibe.listener.redis.CurrentPriceSnapshotRedisRepository;
 import depth.finvibe.listener.redis.CurrentWatcherRedisRepository;
 import depth.finvibe.listener.security.JwtTokenVerifier;
 import depth.finvibe.listener.config.WebSocketProperties;
@@ -18,6 +19,7 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadLocalRandom;
@@ -29,6 +31,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 	private final SessionRegistry sessionRegistry;
 	private final JwtTokenVerifier jwtTokenVerifier;
 	private final CurrentWatcherRedisRepository currentWatcherRedisRepository;
+	private final CurrentPriceSnapshotRedisRepository currentPriceSnapshotRedisRepository;
 	private final WebSocketMetrics webSocketMetrics;
 	private final ObjectMapper objectMapper;
 	private final Executor virtualTaskExecutor;
@@ -38,6 +41,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 			SessionRegistry sessionRegistry,
 			JwtTokenVerifier jwtTokenVerifier,
 			CurrentWatcherRedisRepository currentWatcherRedisRepository,
+			CurrentPriceSnapshotRedisRepository currentPriceSnapshotRedisRepository,
 			WebSocketMetrics webSocketMetrics,
 			ObjectMapper objectMapper,
 			WebSocketProperties webSocketProperties,
@@ -46,6 +50,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		this.sessionRegistry = sessionRegistry;
 		this.jwtTokenVerifier = jwtTokenVerifier;
 		this.currentWatcherRedisRepository = currentWatcherRedisRepository;
+		this.currentPriceSnapshotRedisRepository = currentPriceSnapshotRedisRepository;
 		this.webSocketMetrics = webSocketMetrics;
 		this.objectMapper = objectMapper;
 		this.virtualTaskExecutor = virtualTaskExecutor;
@@ -185,6 +190,7 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 		ArrayNode rejectedNode = subscribeAck.putArray("rejected");
 		rejected.forEach(rejectedNode::add);
 		sendJson(webSocketSession, subscribeAck);
+		sendInitialPriceSnapshots(webSocketSession, subscribed);
 
 		if (!toSaveInWatcher.isEmpty()) {
 			String watcherId = clientSession.getWatcherId();
@@ -197,6 +203,36 @@ public class MarketQuoteWebSocketHandler extends TextWebSocketHandler {
 					}
 				}
 			});
+		}
+	}
+
+	private void sendInitialPriceSnapshots(WebSocketSession webSocketSession, List<String> subscribedTopics) throws Exception {
+		if (subscribedTopics.isEmpty()) {
+			return;
+		}
+
+		List<Long> stockIds = subscribedTopics.stream()
+				.map(this::parseStockId)
+				.filter(stockId -> stockId != null)
+				.distinct()
+				.toList();
+		Map<Long, ObjectNode> snapshots = currentPriceSnapshotRedisRepository.findByStockIds(stockIds);
+
+		for (String topic : subscribedTopics) {
+			Long stockId = parseStockId(topic);
+			ObjectNode snapshot = stockId == null ? null : snapshots.get(stockId);
+			if (snapshot == null) {
+				continue;
+			}
+
+			ObjectNode payload = objectMapper.createObjectNode();
+			payload.put("type", "event");
+			payload.put("topic", topic);
+			payload.put("ts", System.currentTimeMillis());
+			ObjectNode data = snapshot.deepCopy();
+			data.put("initial", true);
+			payload.set("data", data);
+			sendJson(webSocketSession, payload);
 		}
 	}
 

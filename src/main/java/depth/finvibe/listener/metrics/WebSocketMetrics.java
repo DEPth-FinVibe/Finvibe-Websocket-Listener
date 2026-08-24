@@ -159,6 +159,17 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_redis_events_failed_total").increment();
 	}
 
+	public void initialSnapshotResult(String result, long count) {
+		if (count <= 0) {
+			return;
+		}
+		meterRegistry.counter("finvibe_ws_initial_snapshot_results_total", "result", result).increment(count);
+	}
+
+	public void initialSnapshotReadLatency(long latencyMs) {
+		recordLatency("finvibe_ws_initial_snapshot_read_latency", latencyMs);
+	}
+
 	public void eventBroadcasted() {
 		meterRegistry.counter("finvibe_ws_events_broadcast_total").increment();
 	}
