@@ -66,6 +66,7 @@ public class MarketEventBroadcaster {
 		copyNumber(currentPriceEvent, data, "close", "price");
 		copyNumber(currentPriceEvent, data, "prevDayChangePct", "prevDayChangePct");
 		copyNumber(currentPriceEvent, data, "volume", "volume");
+		copyNumber(currentPriceEvent, data, "value", "value");
 
 		String serialized;
 		try {
