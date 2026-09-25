@@ -89,4 +89,37 @@ class MarketEventBroadcasterTest {
 		assertThat(payload.path("data").path("price").asLong()).isEqualTo(71_000L);
 		assertThat(payload.path("data").path("value").asLong()).isEqualTo(87_654_321L);
 	}
+
+	@Test
+	@DisplayName("실시간 현재가 이벤트의 priceVersion을 정밀도 손실 없이 전달한다")
+	void broadcastCurrentPrice_includesPriceVersion() throws Exception {
+		when(webSocketProperties.fanoutChunkSize()).thenReturn(128);
+		when(webSocketProperties.fanoutChunkParallelism()).thenReturn(1);
+		when(sessionRegistry.getSubscribers(1L)).thenReturn(List.of(clientSession));
+		when(clientSession.getWebSocketSession()).thenReturn(webSocketSession);
+		when(clientSession.isEstablished()).thenReturn(true);
+		when(webSocketSession.isOpen()).thenReturn(true);
+		when(webSocketSession.getId()).thenReturn("session-1");
+		when(sessionRegistry.get("session-1")).thenReturn(clientSession);
+		when(clientSession.upsertLatestDataTask(eq("quote:1"), any())).thenAnswer(invocation -> {
+			invocation.getArgument(1, Runnable.class).run();
+			return false;
+		});
+
+		ObjectNode event = objectMapper.createObjectNode();
+		event.put("stockId", 1L);
+		event.put("ts", System.currentTimeMillis());
+		event.put("close", 71_000L);
+		event.put("prevDayChangePct", 1.2);
+		event.put("volume", 12_345L);
+		event.put("value", 87_654_321L);
+		event.put("priceVersion", 1_790_298_001_000_002L);
+
+		broadcaster.broadcastCurrentPrice(event);
+
+		ArgumentCaptor<TextMessage> messageCaptor = ArgumentCaptor.forClass(TextMessage.class);
+		verify(webSocketSession).sendMessage(messageCaptor.capture());
+		JsonNode payload = objectMapper.readTree(messageCaptor.getValue().getPayload());
+		assertThat(payload.path("data").path("priceVersion").asLong()).isEqualTo(1_790_298_001_000_002L);
+	}
 }

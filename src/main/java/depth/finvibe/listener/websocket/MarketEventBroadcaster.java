@@ -67,6 +67,8 @@ public class MarketEventBroadcaster {
 		copyNumber(currentPriceEvent, data, "prevDayChangePct", "prevDayChangePct");
 		copyNumber(currentPriceEvent, data, "volume", "volume");
 		copyNumber(currentPriceEvent, data, "value", "value");
+		// 클라이언트가 스냅샷·실시간 틱·수익률 근거 중 최신 값을 버전으로 고른다.
+		copyNumber(currentPriceEvent, data, "priceVersion", "priceVersion");
 
 		String serialized;
 		try {
