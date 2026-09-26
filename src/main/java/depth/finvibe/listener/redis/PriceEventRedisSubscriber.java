@@ -51,8 +51,26 @@ public class PriceEventRedisSubscriber implements MessageListener {
 	}
 
 	private void processMessage(String payload, long arrivedAt) {
+		JsonNode root;
 		try {
-			JsonNode event = objectMapper.readTree(payload);
+			root = objectMapper.readTree(payload);
+		} catch (Exception ex) {
+			webSocketMetrics.redisEventFailed();
+			log.warn("Failed to parse current-price redis payload.", ex);
+			return;
+		}
+		// 모놀리식은 여러 틱을 배열 하나로 묶어 발행한다. 배열이 아니면 이전 형식(틱 1건)이다.
+		if (root.isArray()) {
+			for (JsonNode event : root) {
+				processEvent(event, arrivedAt);
+			}
+			return;
+		}
+		processEvent(root, arrivedAt);
+	}
+
+	private void processEvent(JsonNode event, long arrivedAt) {
+		try {
 			long consumedAt = System.currentTimeMillis();
 			Long sourceTs = longOrNull(event.path("ts"));
 			Long publishedAt = longOrNull(event.path("publishedAt"));
