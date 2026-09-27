@@ -1,8 +1,6 @@
 package depth.finvibe.listener.websocket;
 
 import depth.finvibe.listener.metrics.WebSocketMetrics;
-import depth.finvibe.listener.config.WebSocketProperties;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -15,8 +13,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.Executor;
 
 @Component
 public class MarketEventBroadcaster {
@@ -25,39 +21,35 @@ public class MarketEventBroadcaster {
 	private final SessionRegistry sessionRegistry;
 	private final ObjectMapper objectMapper;
 	private final WebSocketMetrics webSocketMetrics;
-	private final WebSocketProperties webSocketProperties;
-	private final Executor fanoutChunkExecutor;
 
 	public MarketEventBroadcaster(
 			SessionRegistry sessionRegistry,
 			ObjectMapper objectMapper,
-			WebSocketMetrics webSocketMetrics,
-			WebSocketProperties webSocketProperties,
-			@Qualifier("listenerFanoutChunkExecutor") Executor fanoutChunkExecutor
+			WebSocketMetrics webSocketMetrics
 	) {
 		this.sessionRegistry = sessionRegistry;
 		this.objectMapper = objectMapper;
 		this.webSocketMetrics = webSocketMetrics;
-		this.webSocketProperties = webSocketProperties;
-		this.fanoutChunkExecutor = fanoutChunkExecutor;
 	}
 
+	/**
+	 * 틱 하나를 구독 세션마다 대기열에 덧붙인다. 합치거나 버리지 않는다(#17 D19).
+	 * 틱 JSON은 한 번만 만들고, 세션은 쌓인 틱을 {@code events} 프레임 하나로 묶어 보낸다.
+	 */
 	public void broadcastCurrentPrice(JsonNode currentPriceEvent) {
 		Long stockId = longOrNull(currentPriceEvent.path("stockId"));
 		if (stockId == null) {
 			return;
 		}
 		long broadcastedAt = System.currentTimeMillis();
-		long fanoutStartedAt = broadcastedAt;
 		Long sourceTs = longOrNull(currentPriceEvent.path("ts"));
 		Long consumedAt = longOrNull(currentPriceEvent.path("consumedAt"));
 
-		ObjectNode payload = objectMapper.createObjectNode();
-		payload.put("type", "event");
-		payload.put("topic", "quote:" + stockId);
-		payload.put("ts", broadcastedAt);
+		ObjectNode item = objectMapper.createObjectNode();
+		item.put("topic", "quote:" + stockId);
+		item.put("ts", broadcastedAt);
 
-		ObjectNode data = payload.putObject("data");
+		ObjectNode data = item.putObject("data");
 		data.put("stockId", stockId);
 		if (sourceTs != null) {
 			data.put("eventTs", sourceTs);
@@ -72,94 +64,51 @@ public class MarketEventBroadcaster {
 
 		String serialized;
 		try {
-			serialized = objectMapper.writeValueAsString(payload);
+			serialized = objectMapper.writeValueAsString(item);
 		} catch (Exception ex) {
 			log.warn("Failed to serialize event payload for stockId={}", stockId, ex);
 			return;
 		}
 
-		TextMessage message = new TextMessage(serialized);
 		webSocketMetrics.eventBroadcasted();
 		if (consumedAt != null) {
 			webSocketMetrics.eventConsumeToBroadcastLatency(broadcastedAt - consumedAt);
 		}
-		var subscribers = sessionRegistry.getSubscribers(stockId);
-		String topic = "quote:" + stockId;
-		int chunkSize = Math.max(1, webSocketProperties.fanoutChunkSize());
-		int chunkParallelism = Math.max(1, webSocketProperties.fanoutChunkParallelism());
-		if (subscribers.size() <= chunkSize || chunkParallelism == 1) {
-			enqueueChunk(subscribers, 0, subscribers.size(), message, stockId, sourceTs, broadcastedAt, topic);
-			webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
-			return;
-		}
-		int chunkCount = (subscribers.size() + chunkSize - 1) / chunkSize;
-		AtomicInteger remainingChunks = new AtomicInteger(chunkCount);
-		for (int start = 0; start < subscribers.size(); start += chunkSize) {
-			int end = Math.min(start + chunkSize, subscribers.size());
-			int chunkStart = start;
-			int chunkEnd = end;
-			fanoutChunkExecutor.execute(() -> {
-				try {
-					enqueueChunk(subscribers, chunkStart, chunkEnd, message, stockId, sourceTs, broadcastedAt, topic);
-				} finally {
-					if (remainingChunks.decrementAndGet() == 0) {
-						webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - fanoutStartedAt);
-					}
-				}
-			});
-		}
-	}
-
-	private void enqueueChunk(
-			List<ClientSession> subscribers,
-			int start,
-			int end,
-			TextMessage message,
-			long stockId,
-			Long sourceTs,
-			long broadcastedAt,
-			String topic
-	) {
-		for (int index = start; index < end; index++) {
-			ClientSession clientSession = subscribers.get(index);
+		for (ClientSession clientSession : sessionRegistry.getSubscribers(stockId)) {
 			WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 			if (!webSocketSession.isOpen() || !clientSession.isEstablished()) {
 				continue;
 			}
-			long enqueueStartedAt = System.currentTimeMillis();
-
-			boolean replaced = clientSession.upsertLatestDataTask(
-					topic,
-					() -> deliverEvent(webSocketSession, message, stockId, sourceTs, broadcastedAt, enqueueStartedAt)
-			);
-			long enqueueCompletedAt = System.currentTimeMillis();
-			webSocketMetrics.eventSourceToEnqueueLatency(enqueueCompletedAt - enqueueStartedAt);
-			webSocketMetrics.eventBroadcastToEnqueueLatency(enqueueCompletedAt - broadcastedAt);
-			if (replaced) {
-				webSocketMetrics.eventOutboundCoalesced();
-				webSocketMetrics.eventOutboundStaleDrop();
+			ClientSession.DataEnqueueResult result = clientSession.enqueueData(serialized, this::deliverFrame);
+			if (result == ClientSession.DataEnqueueResult.BACKLOG_EXCEEDED) {
+				webSocketMetrics.sessionBacklogExceeded();
+				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("backlog_exceeded"), "broadcast_backlog_exceeded");
 			}
 		}
+		webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - broadcastedAt);
 	}
 
-	private void deliverEvent(WebSocketSession webSocketSession, TextMessage message, long stockId, Long sourceTs, long broadcastedAt, long enqueuedAt) {
+	void deliverFrame(ClientSession clientSession, List<String> items) {
+		WebSocketSession webSocketSession = clientSession.getWebSocketSession();
+		long writeStartedAt = System.currentTimeMillis();
+		StringBuilder frame = new StringBuilder(64 + items.size() * 192)
+				.append("{\"type\":\"events\",\"ts\":").append(writeStartedAt).append(",\"items\":[");
+		for (int i = 0; i < items.size(); i++) {
+			if (i > 0) {
+				frame.append(',');
+			}
+			frame.append(items.get(i));
+		}
+		frame.append("]}");
+		TextMessage message = new TextMessage(frame.toString());
 		try {
-			long writeStartedAt = System.currentTimeMillis();
-			webSocketMetrics.outboundDataEnqueueToWriteStartLatency(writeStartedAt - enqueuedAt);
 			webSocketSession.sendMessage(message);
 			long deliveredAt = System.currentTimeMillis();
-			ClientSession clientSession = sessionRegistry.get(webSocketSession.getId());
-			if (clientSession != null) {
-				clientSession.markOutboundSent(deliveredAt);
-			}
-			webSocketMetrics.eventDelivered();
+			clientSession.markOutboundSent(deliveredAt);
+			webSocketMetrics.eventsDelivered(items.size());
+			webSocketMetrics.dataFrameSent(items.size());
 			webSocketMetrics.outboundDataWriteDuration(deliveredAt - writeStartedAt);
 			webSocketMetrics.outboundDataBytesSent(message.getPayloadLength());
-			if (sourceTs != null) {
-				webSocketMetrics.eventSourceToSendMessageLatency(deliveredAt - sourceTs);
-			}
-			webSocketMetrics.eventSourceToDeliveryLatency(deliveredAt - broadcastedAt);
-			webSocketMetrics.outboundDataDeliveryLatency(deliveredAt - enqueuedAt);
 		} catch (SessionLimitExceededException ex) {
 			webSocketMetrics.eventDeliveryFailed();
 			webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");
@@ -168,7 +117,7 @@ public class MarketEventBroadcaster {
 			webSocketMetrics.eventDeliveryFailed();
 			webSocketMetrics.eventDeliveryFailed(classifyDeliveryFailure(ex, webSocketSession));
 			webSocketMetrics.sessionTaskFailure("broadcast_event");
-			log.debug("Failed to deliver event. sessionId={}, stockId={}", webSocketSession.getId(), stockId, ex);
+			log.debug("Failed to deliver event frame. sessionId={}, items={}", webSocketSession.getId(), items.size(), ex);
 		}
 	}
 

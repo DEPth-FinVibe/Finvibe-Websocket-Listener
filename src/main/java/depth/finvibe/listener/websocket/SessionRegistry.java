@@ -31,7 +31,9 @@ public class SessionRegistry {
 				nowEpochMs,
 				virtualTaskExecutor,
 				webSocketProperties.sessionQueueCapacity(),
-				webSocketProperties.isAnonymousSubscribeEnabled()
+				webSocketProperties.isAnonymousSubscribeEnabled(),
+				webSocketProperties.sessionDataBacklogLimit(),
+				webSocketProperties.sessionDataMaxItemsPerFrame()
 		);
 		sessions.put(webSocketSession.getId(), clientSession);
 		return clientSession;

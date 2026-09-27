@@ -4,24 +4,48 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClientSession {
 	private static final Logger log = LoggerFactory.getLogger(ClientSession.class);
 	private static final int CONTROL_TASK_BURST_LIMIT = 2;
 	private static final String ANONYMOUS_WATCHER_PREFIX = "anon:";
+	static final int DEFAULT_DATA_BACKLOG_LIMIT = 10_000;
+	static final int DEFAULT_MAX_ITEMS_PER_FRAME = 256;
+
+	/**
+	 * 쌓인 틱 여러 건을 웹소켓 프레임 하나로 보낸다.
+	 */
+	@FunctionalInterface
+	public interface DataFrameSender {
+		void send(ClientSession clientSession, List<String> items);
+	}
+
+	public enum DataEnqueueResult {
+		ENQUEUED,
+		// 받는 속도가 느려 보내지 못한 틱이 한도를 넘었다. 틱을 버리지 않고 연결을 끊는다(#17 D24).
+		BACKLOG_EXCEEDED,
+		CLOSED
+	}
 
 	private final WebSocketSession webSocketSession;
 	private final long connectedAtEpochMs;
 	private final Executor virtualTaskExecutor;
 	private final ArrayBlockingQueue<Runnable> sessionTaskQueue;
-	private final ConcurrentHashMap<String, Runnable> latestDataTasksByTopic = new ConcurrentHashMap<>();
-	private final ConcurrentLinkedQueue<String> pendingDataTopics = new ConcurrentLinkedQueue<>();
+	// 보낼 틱(JSON 항목)을 도착 순서대로 쌓는다. 합치거나 버리지 않고, 보낼 때 여러 건을 프레임 하나로 묶는다.
+	private final ConcurrentLinkedQueue<String> pendingDataItems = new ConcurrentLinkedQueue<>();
+	private final AtomicInteger pendingDataCount = new AtomicInteger();
+	private final int dataBacklogLimit;
+	private final int maxItemsPerFrame;
+	private volatile DataFrameSender dataFrameSender;
 	private final AtomicBoolean queueDraining = new AtomicBoolean(false);
 	private volatile boolean queueClosed;
 	private volatile Long userId;
@@ -46,6 +70,21 @@ public class ClientSession {
 			int queueCapacity,
 			boolean establishedOnConnect
 	) {
+		this(webSocketSession, nowEpochMs, virtualTaskExecutor, queueCapacity, establishedOnConnect,
+				DEFAULT_DATA_BACKLOG_LIMIT, DEFAULT_MAX_ITEMS_PER_FRAME);
+	}
+
+	public ClientSession(
+			WebSocketSession webSocketSession,
+			long nowEpochMs,
+			Executor virtualTaskExecutor,
+			int queueCapacity,
+			boolean establishedOnConnect,
+			int dataBacklogLimit,
+			int maxItemsPerFrame
+	) {
+		this.dataBacklogLimit = dataBacklogLimit > 0 ? dataBacklogLimit : DEFAULT_DATA_BACKLOG_LIMIT;
+		this.maxItemsPerFrame = maxItemsPerFrame > 0 ? maxItemsPerFrame : DEFAULT_MAX_ITEMS_PER_FRAME;
 		this.webSocketSession = webSocketSession;
 		this.established = establishedOnConnect;
 		this.connectedAtEpochMs = nowEpochMs;
@@ -169,21 +208,26 @@ public class ClientSession {
 		return true;
 	}
 
-	public boolean upsertLatestDataTask(String topic, Runnable task) {
+	public DataEnqueueResult enqueueData(String item, DataFrameSender sender) {
 		if (queueClosed) {
-			return false;
+			return DataEnqueueResult.CLOSED;
 		}
-
-		Runnable previous = latestDataTasksByTopic.put(topic, task);
-		if (previous == null) {
-			pendingDataTopics.offer(topic);
-			if (pendingDataSinceEpochMs == 0L) {
-				pendingDataSinceEpochMs = System.currentTimeMillis();
-			}
+		if (pendingDataCount.incrementAndGet() > dataBacklogLimit) {
+			pendingDataCount.decrementAndGet();
+			return DataEnqueueResult.BACKLOG_EXCEEDED;
+		}
+		dataFrameSender = sender;
+		pendingDataItems.offer(item);
+		if (pendingDataSinceEpochMs == 0L) {
+			pendingDataSinceEpochMs = System.currentTimeMillis();
 		}
 
 		scheduleQueueDrain();
-		return previous != null;
+		return DataEnqueueResult.ENQUEUED;
+	}
+
+	public int getPendingDataCount() {
+		return pendingDataCount.get();
 	}
 
 	public int getQueuedTaskCount() {
@@ -191,7 +235,7 @@ public class ClientSession {
 	}
 
 	public boolean hasPendingDataTasks() {
-		return !latestDataTasksByTopic.isEmpty();
+		return pendingDataCount.get() > 0;
 	}
 
 	public long getPendingDataSinceEpochMs() {
@@ -205,8 +249,8 @@ public class ClientSession {
 	public void closeQueue() {
 		queueClosed = true;
 		sessionTaskQueue.clear();
-		pendingDataTopics.clear();
-		latestDataTasksByTopic.clear();
+		pendingDataItems.clear();
+		pendingDataCount.set(0);
 	}
 
 	private void scheduleQueueDrain() {
@@ -231,12 +275,9 @@ public class ClientSession {
 				}
 
 				if (task == null) {
-					String topic = pendingDataTopics.poll();
-					if (topic != null) {
-						task = latestDataTasksByTopic.remove(topic);
-						if (task == null) {
-							continue;
-						}
+					List<String> frame = pollDataFrame();
+					if (!frame.isEmpty()) {
+						task = () -> dataFrameSender.send(this, frame);
 						consecutiveControlTasks = 0;
 					}
 				}
@@ -254,18 +295,30 @@ public class ClientSession {
 
 				try {
 					task.run();
-					if (latestDataTasksByTopic.isEmpty() && pendingDataTopics.isEmpty()) {
-						pendingDataSinceEpochMs = 0L;
-					}
+					// 대기가 비면 0, 남아 있으면 방금 보냈으므로 지금부터 다시 잰다.
+					// 그래서 느린 소비자 판정(sweep)은 "쌓인 채 진전이 없는 시간"을 본다.
+					pendingDataSinceEpochMs = pendingDataCount.get() == 0 ? 0L : System.currentTimeMillis();
 				} catch (Exception ex) {
 					log.debug("Session task failed. sessionId={}", getSessionId(), ex);
 				}
 			}
 		} finally {
 			queueDraining.set(false);
-			if (!queueClosed && (!sessionTaskQueue.isEmpty() || !pendingDataTopics.isEmpty())) {
+			if (!queueClosed && (!sessionTaskQueue.isEmpty() || !pendingDataItems.isEmpty())) {
 				scheduleQueueDrain();
 			}
 		}
+	}
+
+	private List<String> pollDataFrame() {
+		List<String> frame = new ArrayList<>();
+		String item;
+		while (frame.size() < maxItemsPerFrame && (item = pendingDataItems.poll()) != null) {
+			frame.add(item);
+		}
+		if (!frame.isEmpty()) {
+			pendingDataCount.addAndGet(-frame.size());
+		}
+		return frame;
 	}
 }

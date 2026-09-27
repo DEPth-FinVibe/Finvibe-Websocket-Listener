@@ -21,18 +21,18 @@ public class PriceEventRedisSubscriber implements MessageListener {
 	private final ObjectMapper objectMapper;
 	private final MarketEventIngressDispatcher marketEventIngressDispatcher;
 	private final WebSocketMetrics webSocketMetrics;
-	private final Executor virtualTaskExecutor;
+	private final Executor ingressExecutor;
 
 	public PriceEventRedisSubscriber(
 			ObjectMapper objectMapper,
 			MarketEventIngressDispatcher marketEventIngressDispatcher,
 			WebSocketMetrics webSocketMetrics,
-			@Qualifier("listenerVirtualTaskExecutor") Executor virtualTaskExecutor
+			@Qualifier("listenerPriceIngressExecutor") Executor ingressExecutor
 	) {
 		this.objectMapper = objectMapper;
 		this.marketEventIngressDispatcher = marketEventIngressDispatcher;
 		this.webSocketMetrics = webSocketMetrics;
-		this.virtualTaskExecutor = virtualTaskExecutor;
+		this.ingressExecutor = ingressExecutor;
 	}
 
 	@Override
@@ -47,7 +47,7 @@ public class PriceEventRedisSubscriber implements MessageListener {
 	}
 
 	public void handle(String payload, long arrivedAt) {
-		virtualTaskExecutor.execute(() -> processMessage(payload, arrivedAt));
+		ingressExecutor.execute(() -> processMessage(payload, arrivedAt));
 	}
 
 	private void processMessage(String payload, long arrivedAt) {

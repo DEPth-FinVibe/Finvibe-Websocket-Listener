@@ -206,6 +206,19 @@ public class WebSocketMetrics {
 		meterRegistry.counter("finvibe_ws_event_deliveries_total").increment();
 	}
 
+	public void eventsDelivered(int count) {
+		meterRegistry.counter("finvibe_ws_event_deliveries_total").increment(count);
+	}
+
+	public void dataFrameSent(int items) {
+		meterRegistry.counter("finvibe_ws_data_frames_total").increment();
+		meterRegistry.summary("finvibe_ws_data_frame_items").record(items);
+	}
+
+	public void sessionBacklogExceeded() {
+		meterRegistry.counter("finvibe_ws_session_backlog_exceeded_total").increment();
+	}
+
 	public void eventSourceToDeliveryLatency(long latencyMs) {
 		recordLatency("finvibe_ws_event_source_to_delivery_latency", latencyMs);
 	}

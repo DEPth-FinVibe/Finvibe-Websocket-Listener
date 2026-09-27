@@ -22,7 +22,11 @@ public record WebSocketProperties(
 		int sendBufferSizeBytes,
 		String sendOverflowStrategy,
 		int sessionQueueCapacity,
-		Boolean anonymousSubscribeEnabled
+		Boolean anonymousSubscribeEnabled,
+		// 세션별로 보내지 못하고 쌓인 틱 한도. 넘으면 연결을 끊는다(#17 D24). 0이면 기본값.
+		int sessionDataBacklogLimit,
+		// 프레임 하나에 담을 최대 틱 수. 0이면 기본값.
+		int sessionDataMaxItemsPerFrame
 ) {
 
 	/**

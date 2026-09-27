@@ -40,9 +40,12 @@ listener:
     fanout-chunk-queue-capacity: ${WS_FANOUT_CHUNK_QUEUE_CAPACITY:1024}
     send-time-limit-ms: ${WS_SEND_TIME_LIMIT_MS:10000}
     send-buffer-size-bytes: ${WS_SEND_BUFFER_SIZE_BYTES:262144}
-    send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:DROP}
+    # 전송 버퍼가 넘치면 조용히 버리지 않고 연결을 끊는다. 클라이언트는 재접속 후 스냅샷으로 복구한다(#17 D24).
+    send-overflow-strategy: ${WS_SEND_OVERFLOW_STRATEGY:TERMINATE}
     session-queue-capacity: ${WS_SESSION_QUEUE_CAPACITY:2048}
     anonymous-subscribe-enabled: ${WS_ANONYMOUS_SUBSCRIBE_ENABLED:true}
+    session-data-backlog-limit: ${WS_SESSION_DATA_BACKLOG_LIMIT:10000}
+    session-data-max-items-per-frame: ${WS_SESSION_DATA_MAX_ITEMS_PER_FRAME:256}
   redis:
     topic:
       current-price-updated: ${WS_PRICE_TOPIC:market:price-updated}
