@@ -79,7 +79,7 @@ public class MarketEventBroadcaster {
 			if (!webSocketSession.isOpen() || !clientSession.isEstablished()) {
 				continue;
 			}
-			ClientSession.DataEnqueueResult result = clientSession.enqueueData(serialized, this::deliverFrame);
+			ClientSession.DataEnqueueResult result = clientSession.enqueueData(serialized, sourceTs == null ? 0L : sourceTs, this::deliverFrame);
 			if (result == ClientSession.DataEnqueueResult.BACKLOG_EXCEEDED) {
 				webSocketMetrics.sessionBacklogExceeded();
 				safeClose(webSocketSession, CloseStatus.SESSION_NOT_RELIABLE.withReason("backlog_exceeded"), "broadcast_backlog_exceeded");
@@ -88,7 +88,7 @@ public class MarketEventBroadcaster {
 		webSocketMetrics.eventSourceToBroadcastLatency(System.currentTimeMillis() - broadcastedAt);
 	}
 
-	void deliverFrame(ClientSession clientSession, List<String> items) {
+	void deliverFrame(ClientSession clientSession, List<ClientSession.PendingItem> items) {
 		WebSocketSession webSocketSession = clientSession.getWebSocketSession();
 		long writeStartedAt = System.currentTimeMillis();
 		StringBuilder frame = new StringBuilder(64 + items.size() * 192)
@@ -97,7 +97,7 @@ public class MarketEventBroadcaster {
 			if (i > 0) {
 				frame.append(',');
 			}
-			frame.append(items.get(i));
+			frame.append(items.get(i).json());
 		}
 		frame.append("]}");
 		TextMessage message = new TextMessage(frame.toString());
@@ -109,6 +109,12 @@ public class MarketEventBroadcaster {
 			webSocketMetrics.dataFrameSent(items.size());
 			webSocketMetrics.outboundDataWriteDuration(deliveredAt - writeStartedAt);
 			webSocketMetrics.outboundDataBytesSent(message.getPayloadLength());
+			// 종단간 지연: 틱이 만들어진 시각부터 이 세션에 보낸 시각까지, 틱마다 잰다.
+			for (ClientSession.PendingItem item : items) {
+				if (item.sourceTs() > 0) {
+					webSocketMetrics.eventSourceToSendMessageLatency(deliveredAt - item.sourceTs());
+				}
+			}
 		} catch (SessionLimitExceededException ex) {
 			webSocketMetrics.eventDeliveryFailed();
 			webSocketMetrics.eventDeliveryFailed("buffer_limit_exceeded");

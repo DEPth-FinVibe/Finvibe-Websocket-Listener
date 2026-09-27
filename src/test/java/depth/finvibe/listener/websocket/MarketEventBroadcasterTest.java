@@ -83,6 +83,8 @@ class MarketEventBroadcasterTest {
 		assertThat(frame.path("items")).extracting(item -> item.path("data").path("price").asLong())
 				.containsExactly(100L, 101L, 102L);
 		verify(webSocketMetrics).eventsDelivered(3);
+		// 종단간 지연은 묶음 안의 틱마다 기록한다.
+		verify(webSocketMetrics, times(3)).eventSourceToSendMessageLatency(org.mockito.ArgumentMatchers.anyLong());
 	}
 
 	@Test

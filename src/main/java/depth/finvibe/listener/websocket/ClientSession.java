@@ -26,7 +26,13 @@ public class ClientSession {
 	 */
 	@FunctionalInterface
 	public interface DataFrameSender {
-		void send(ClientSession clientSession, List<String> items);
+		void send(ClientSession clientSession, List<PendingItem> items);
+	}
+
+	/**
+	 * 보낼 틱 하나. sourceTs는 틱이 만들어진 시각(epoch ms)이고, 없으면 0이다. 종단간 지연을 재는 데 쓴다.
+	 */
+	public record PendingItem(String json, long sourceTs) {
 	}
 
 	public enum DataEnqueueResult {
@@ -41,7 +47,7 @@ public class ClientSession {
 	private final Executor virtualTaskExecutor;
 	private final ArrayBlockingQueue<Runnable> sessionTaskQueue;
 	// 보낼 틱(JSON 항목)을 도착 순서대로 쌓는다. 합치거나 버리지 않고, 보낼 때 여러 건을 프레임 하나로 묶는다.
-	private final ConcurrentLinkedQueue<String> pendingDataItems = new ConcurrentLinkedQueue<>();
+	private final ConcurrentLinkedQueue<PendingItem> pendingDataItems = new ConcurrentLinkedQueue<>();
 	private final AtomicInteger pendingDataCount = new AtomicInteger();
 	private final int dataBacklogLimit;
 	private final int maxItemsPerFrame;
@@ -209,6 +215,10 @@ public class ClientSession {
 	}
 
 	public DataEnqueueResult enqueueData(String item, DataFrameSender sender) {
+		return enqueueData(item, 0L, sender);
+	}
+
+	public DataEnqueueResult enqueueData(String item, long sourceTs, DataFrameSender sender) {
 		if (queueClosed) {
 			return DataEnqueueResult.CLOSED;
 		}
@@ -217,7 +227,7 @@ public class ClientSession {
 			return DataEnqueueResult.BACKLOG_EXCEEDED;
 		}
 		dataFrameSender = sender;
-		pendingDataItems.offer(item);
+		pendingDataItems.offer(new PendingItem(item, sourceTs));
 		if (pendingDataSinceEpochMs == 0L) {
 			pendingDataSinceEpochMs = System.currentTimeMillis();
 		}
@@ -275,7 +285,7 @@ public class ClientSession {
 				}
 
 				if (task == null) {
-					List<String> frame = pollDataFrame();
+					List<PendingItem> frame = pollDataFrame();
 					if (!frame.isEmpty()) {
 						task = () -> dataFrameSender.send(this, frame);
 						consecutiveControlTasks = 0;
@@ -310,9 +320,9 @@ public class ClientSession {
 		}
 	}
 
-	private List<String> pollDataFrame() {
-		List<String> frame = new ArrayList<>();
-		String item;
+	private List<PendingItem> pollDataFrame() {
+		List<PendingItem> frame = new ArrayList<>();
+		PendingItem item;
 		while (frame.size() < maxItemsPerFrame && (item = pendingDataItems.poll()) != null) {
 			frame.add(item);
 		}
