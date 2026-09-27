@@ -17,6 +17,8 @@ public class CurrentWatcherRedisRepository {
 
 	private static final String KEY_PREFIX = "market:current-watcher:";
 	private static final Duration INDEX_TTL = Duration.ofMinutes(10);
+	// 감시 중인 종목 인덱스(member = 종목 ID, score = 만료 시각 epoch ms). 모놀리식이 KEYS 대신 이 집합으로 찾는다(#17 D25).
+	static final String ACTIVE_INDEX_KEY = "market:current-watcher-index";
 
 	private final StringRedisTemplate redisTemplate;
 	private final WebSocketMetrics webSocketMetrics;
@@ -26,6 +28,7 @@ public class CurrentWatcherRedisRepository {
 			String key = keyForStock(stockId);
 			redisTemplate.opsForSet().add(key, watcherId);
 			redisTemplate.expire(key, INDEX_TTL);
+			touchIndex(stockId);
 			webSocketMetrics.watcherOp("save");
 		} catch (Exception ex) {
 			webSocketMetrics.watcherError("save");
@@ -38,6 +41,7 @@ public class CurrentWatcherRedisRepository {
 			String key = keyForStock(stockId);
 			if (Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
 				redisTemplate.expire(key, INDEX_TTL);
+				touchIndex(stockId);
 				webSocketMetrics.watcherOp("renew");
 				return;
 			}
@@ -56,6 +60,7 @@ public class CurrentWatcherRedisRepository {
 			Long remaining = redisTemplate.opsForSet().size(key);
 			if (remaining != null && remaining == 0L) {
 				redisTemplate.delete(key);
+				redisTemplate.opsForZSet().remove(ACTIVE_INDEX_KEY, String.valueOf(stockId));
 			}
 			webSocketMetrics.watcherOp("remove");
 		} catch (Exception ex) {
@@ -69,6 +74,8 @@ public class CurrentWatcherRedisRepository {
 			return;
 		}
 		try {
+			byte[] indexKey = ACTIVE_INDEX_KEY.getBytes(StandardCharsets.UTF_8);
+			double expiresAt = expiresAtMillis();
 			redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
 				for (Map.Entry<Long, Set<String>> entry : watchersByStock.entrySet()) {
 					byte[] key = keyForStock(entry.getKey()).getBytes(StandardCharsets.UTF_8);
@@ -79,6 +86,8 @@ public class CurrentWatcherRedisRepository {
 						connection.setCommands().sAdd(key, members);
 					}
 					connection.keyCommands().expire(key, INDEX_TTL.getSeconds());
+					connection.zSetCommands().zAdd(indexKey, expiresAt,
+							String.valueOf(entry.getKey()).getBytes(StandardCharsets.UTF_8));
 				}
 				return null;
 			});
@@ -87,6 +96,14 @@ public class CurrentWatcherRedisRepository {
 			webSocketMetrics.watcherError("batch_renew");
 			throw ex;
 		}
+	}
+
+	private void touchIndex(Long stockId) {
+		redisTemplate.opsForZSet().add(ACTIVE_INDEX_KEY, String.valueOf(stockId), expiresAtMillis());
+	}
+
+	private static double expiresAtMillis() {
+		return System.currentTimeMillis() + INDEX_TTL.toMillis();
 	}
 
  	private String keyForStock(Long stockId) {
